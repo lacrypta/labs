@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Menu, X, LogIn, Zap, LayoutDashboard } from "lucide-react";
+import { Menu, X, LogIn, Zap, LayoutDashboard, LogOut } from "lucide-react";
 import Logo from "./Logo";
 import LoginModal from "./LoginModal";
 import { cn } from "@/lib/cn";
-import { useAuth } from "@/lib/auth";
+import { useAuth, clearAuth } from "@/lib/auth";
 import { useScrollLock } from "@/lib/useScrollLock";
 import { useNostrProfile } from "@/lib/nostrProfile";
 
@@ -21,11 +21,18 @@ const NAV_LINKS = [
 
 export default function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { auth } = useAuth();
   const { profile } = useNostrProfile(auth?.pubkey);
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+
+  function handleLogout() {
+    clearAuth();
+    setMobileOpen(false);
+    if (pathname.startsWith("/dashboard")) router.push("/");
+  }
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -129,7 +136,7 @@ export default function Navbar() {
                     <span>{auth.pubkey.slice(0, 2).toUpperCase()}</span>
                   )}
                 </span>
-                <span className="hidden sm:inline text-xs text-foreground truncate max-w-[14ch]">
+                <span className="text-xs text-foreground truncate max-w-[14ch]">
                   {profile?.display_name ||
                     profile?.name ||
                     `${auth.pubkey.slice(0, 6)}…`}
@@ -216,14 +223,51 @@ export default function Navbar() {
 
               <div className="mt-auto flex flex-col gap-3">
                 {auth ? (
-                  <Link
-                    href="/dashboard"
-                    onClick={() => setMobileOpen(false)}
-                    className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold bg-gradient-to-r from-bitcoin to-yellow-500 text-black"
-                  >
-                    <LayoutDashboard className="h-4 w-4" />
-                    Mi dashboard
-                  </Link>
+                  <>
+                    <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-white/[0.02]">
+                      <span className="relative h-10 w-10 shrink-0 rounded-full overflow-hidden bg-gradient-to-br from-bitcoin/30 to-nostr/30 ring-1 ring-border-strong flex items-center justify-center text-xs font-display font-bold">
+                        {profile?.picture ? (
+                          <img
+                            src={profile.picture}
+                            alt=""
+                            className="block w-full h-full object-cover object-center"
+                            referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.display =
+                                "none";
+                            }}
+                          />
+                        ) : (
+                          <span>{auth.pubkey.slice(0, 2).toUpperCase()}</span>
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-semibold truncate">
+                          {profile?.display_name ||
+                            profile?.name ||
+                            `${auth.pubkey.slice(0, 10)}…`}
+                        </div>
+                        <div className="text-[11px] text-foreground-subtle font-mono truncate">
+                          {auth.pubkey.slice(0, 10)}…{auth.pubkey.slice(-4)}
+                        </div>
+                      </div>
+                    </div>
+                    <Link
+                      href="/dashboard"
+                      onClick={() => setMobileOpen(false)}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold bg-gradient-to-r from-bitcoin to-yellow-500 text-black"
+                    >
+                      <LayoutDashboard className="h-4 w-4" />
+                      Mi dashboard
+                    </Link>
+                    <button
+                      onClick={handleLogout}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold border border-border hover:bg-danger/10 hover:border-danger/30 hover:text-danger transition-colors"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Cerrar sesión
+                    </button>
+                  </>
                 ) : (
                   <button
                     onClick={() => {

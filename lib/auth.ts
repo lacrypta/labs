@@ -7,7 +7,12 @@ export type AuthMethod = "nip07" | "nip46";
 export type Auth = {
   method: AuthMethod;
   pubkey: string;
-  bunker?: { pubkey?: string; relays: string[] };
+  bunker?: {
+    pubkey?: string;
+    relays: string[];
+    /** one-time auth secret from nostrconnect:// URI or bunker:// URL */
+    secret?: string | null;
+  };
   clientSecret?: number[];
 };
 
