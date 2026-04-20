@@ -18,6 +18,8 @@ import {
   Radio,
   Loader2,
   ExternalLink,
+  FolderGit2,
+  ArrowRight,
 } from "lucide-react";
 import { useAuth, clearAuth, type Auth } from "@/lib/auth";
 import {
@@ -127,6 +129,31 @@ export default function DashboardClient() {
                 </p>
               </Card>
             )}
+
+            <Link
+              href="/dashboard/projects"
+              className="group relative block overflow-hidden rounded-2xl border border-bitcoin/30 bg-gradient-to-br from-bitcoin/10 to-nostr/10 p-6 hover:border-bitcoin/60 transition-all"
+            >
+              <div className="absolute -top-12 -right-12 w-40 h-40 rounded-full bg-bitcoin/20 blur-3xl group-hover:bg-bitcoin/30 transition-colors pointer-events-none" />
+              <div className="relative flex items-start gap-4">
+                <div className="shrink-0 h-11 w-11 rounded-xl bg-bitcoin/20 border border-bitcoin/40 flex items-center justify-center">
+                  <FolderGit2 className="h-5 w-5 text-bitcoin" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="inline-flex items-center gap-1 text-[10px] font-mono tracking-widest text-bitcoin mb-1">
+                    NIP-78 · FIRMADOS POR VOS
+                  </div>
+                  <div className="font-display font-bold text-lg leading-tight">
+                    Mis proyectos
+                  </div>
+                  <div className="text-sm text-foreground-muted mt-1">
+                    Creá y editá tu portfolio. Se guarda firmado en relays
+                    Nostr — vos sos dueño de tu data.
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 text-bitcoin shrink-0 group-hover:translate-x-0.5 transition-transform mt-1" />
+              </div>
+            </Link>
 
             <Card title="Identidad" icon={<Key className="h-4 w-4" />}>
               <div className="grid grid-cols-1 gap-3">
