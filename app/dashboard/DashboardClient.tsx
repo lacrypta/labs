@@ -20,6 +20,7 @@ import {
   ExternalLink,
   FolderGit2,
   ArrowRight,
+  Award,
 } from "lucide-react";
 import { useAuth, clearAuth, type Auth } from "@/lib/auth";
 import {
@@ -27,6 +28,7 @@ import {
   DEFAULT_PROFILE_RELAYS,
   type NostrProfile as BaseNostrProfile,
 } from "@/lib/nostrProfile";
+import { useUserBadges, type AwardedBadge } from "@/lib/nostrBadges";
 import { cn } from "@/lib/cn";
 
 type DashboardProfile = BaseNostrProfile & {
@@ -53,6 +55,8 @@ export default function DashboardClient() {
     cached,
     loading,
   } = useNostrProfile(auth?.pubkey, relays);
+
+  const { badges, loading: badgesLoading } = useUserBadges(auth?.pubkey);
 
   const profile: DashboardProfile | null = useMemo(() => {
     if (!auth) return null;
@@ -129,6 +133,8 @@ export default function DashboardClient() {
                 </p>
               </Card>
             )}
+
+            <BadgesCard badges={badges} loading={badgesLoading} />
 
             <Link
               href="/dashboard/projects"
@@ -495,4 +501,93 @@ function InfoRow({
 
 function shorten(pubkey: string) {
   return `${pubkey.slice(0, 8)}…${pubkey.slice(-6)}`;
+}
+
+function BadgesCard({
+  badges,
+  loading,
+}: {
+  badges: AwardedBadge[];
+  loading: boolean;
+}) {
+  if (!loading && badges.length === 0) return null;
+
+  return (
+    <div className="rounded-2xl border border-border bg-background-card p-5">
+      <div className="flex items-center justify-between gap-2 mb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-foreground-muted">
+            <Award className="h-4 w-4" />
+          </span>
+          <h2 className="font-display font-bold text-sm uppercase tracking-widest text-foreground-muted">
+            Badges
+          </h2>
+          {badges.length > 0 && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-nostr/10 border border-nostr/30 text-[10px] font-mono tracking-wider text-nostr">
+              NIP-58 · {badges.length}
+            </span>
+          )}
+        </div>
+        {loading && (
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-foreground-muted" />
+        )}
+      </div>
+
+      {badges.length === 0 ? (
+        <div className="py-6 text-center text-xs text-foreground-subtle">
+          Buscando badges en relays…
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+          {badges.map((b) => (
+            <BadgeTile key={b.awardId} badge={b} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BadgeTile({ badge }: { badge: AwardedBadge }) {
+  const def = badge.definition;
+  const [imgOk, setImgOk] = useState(true);
+  const image = imgOk ? (def?.thumb ?? def?.image) : null;
+  const name = def?.name || def?.d || "Badge";
+
+  return (
+    <div
+      className="group relative flex flex-col items-center gap-1.5 text-center"
+      title={
+        def?.description ||
+        `${name} · por ${badge.issuer.slice(0, 10)}…${badge.issuer.slice(-4)}`
+      }
+    >
+      <div className="relative aspect-square w-full rounded-xl overflow-hidden border border-border bg-gradient-to-br from-nostr/10 via-transparent to-bitcoin/5 group-hover:border-nostr/40 transition-colors">
+        {image ? (
+          <img
+            src={image}
+            alt={name}
+            className="absolute inset-0 w-full h-full object-cover"
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            onError={() => setImgOk(false)}
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center text-nostr">
+            <Award className="h-6 w-6" />
+          </div>
+        )}
+        <div className="absolute inset-0 pointer-events-none ring-1 ring-inset ring-white/5" />
+      </div>
+      <div className="text-[11px] font-semibold leading-tight line-clamp-2">
+        {name}
+      </div>
+      <div className="text-[9px] font-mono text-foreground-subtle tabular-nums">
+        {new Date(badge.awardedAt * 1000).toLocaleDateString("es-AR", {
+          month: "short",
+          year: "numeric",
+        })}
+      </div>
+    </div>
+  );
 }
