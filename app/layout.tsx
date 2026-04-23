@@ -3,6 +3,7 @@ import { Inter, Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import { ToastProvider } from "@/components/Toast";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -39,7 +40,6 @@ export const metadata: Metadata = {
     "Argentina",
     "LaWallet",
     "Hackatón",
-    "Taller",
     "Blossom",
   ],
   authors: [{ name: "La Crypta Labs" }],
@@ -70,9 +70,11 @@ export default function RootLayout({
       className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} h-full antialiased scroll-smooth`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground overflow-x-hidden">
-        <Navbar />
-        <main className="flex-1">{children}</main>
-        <Footer />
+        <ToastProvider>
+          <Navbar />
+          <main className="flex-1">{children}</main>
+          <Footer />
+        </ToastProvider>
       </body>
     </html>
   );

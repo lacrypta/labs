@@ -1,32 +1,76 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Menu, X, LogIn, Zap, LayoutDashboard } from "lucide-react";
+import {
+  Menu,
+  X,
+  LogIn,
+  Zap,
+  LayoutDashboard,
+  LogOut,
+  ExternalLink,
+} from "lucide-react";
 import Logo from "./Logo";
 import LoginModal from "./LoginModal";
 import { cn } from "@/lib/cn";
-import { useAuth } from "@/lib/auth";
+import { useAuth, clearAuth, readAndClearLogoutReason } from "@/lib/auth";
 import { useScrollLock } from "@/lib/useScrollLock";
 import { useNostrProfile } from "@/lib/nostrProfile";
+import { useToast } from "./Toast";
 
-const NAV_LINKS = [
+type NavLink = {
+  href: string;
+  label: string;
+  external?: boolean;
+};
+
+const NAV_LINKS: NavLink[] = [
   { href: "/", label: "Inicio" },
   { href: "/infrastructure", label: "Infraestructura" },
   { href: "/projects", label: "Proyectos" },
   { href: "/hackathons", label: "Hackatones" },
-  { href: "/workshops", label: "Talleres" },
 ];
 
 export default function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { auth } = useAuth();
   const { profile } = useNostrProfile(auth?.pubkey);
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+  const { push: pushToast } = useToast();
+
+  function handleLogout() {
+    clearAuth("user");
+    setMobileOpen(false);
+    if (pathname.startsWith("/dashboard")) router.push("/");
+  }
+
+  // If the session was cleared by the auth probe (NIP-07 extension vanished
+  // on reload), surface a contextual toast so the user knows why they need
+  // to reconnect. The Navbar is layout-persistent so we can't rely on the
+  // mount effect — instead we consume the reason whenever `auth` is null,
+  // which fires both on initial mount and on clearAuth().
+  useEffect(() => {
+    if (auth) return;
+    const reason = readAndClearLogoutReason();
+    if (!reason) return;
+    if (reason === "signer-missing") {
+      pushToast({
+        kind: "info",
+        title: "Se cerró la sesión",
+        description:
+          "Tu extensión Nostr (Alby, nos2x…) no está disponible. Reconectá para volver a firmar.",
+        duration: 10000,
+      });
+      // Surface the login modal so the action is one click away.
+      setLoginOpen(true);
+    }
+  }, [auth, pushToast]);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -62,20 +106,19 @@ export default function Navbar() {
           <div className="hidden lg:flex items-center gap-1">
             {NAV_LINKS.map((link) => {
               const active =
-                link.href === "/"
-                  ? pathname === "/"
-                  : pathname.startsWith(link.href);
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={cn(
-                    "relative px-4 py-2 text-sm font-medium rounded-lg transition-colors",
-                    active
-                      ? "text-foreground"
-                      : "text-foreground-muted hover:text-foreground",
-                  )}
-                >
+                link.external
+                  ? false
+                  : link.href === "/"
+                    ? pathname === "/"
+                    : pathname.startsWith(link.href);
+              const className = cn(
+                "relative px-4 py-2 text-sm font-medium rounded-lg transition-colors",
+                active
+                  ? "text-foreground"
+                  : "text-foreground-muted hover:text-foreground",
+              );
+              const content = (
+                <>
                   {active && (
                     <motion.div
                       layoutId="nav-pill"
@@ -83,7 +126,27 @@ export default function Navbar() {
                       transition={{ type: "spring", bounce: 0.2, duration: 0.5 }}
                     />
                   )}
-                  <span className="relative">{link.label}</span>
+                  <span className="relative inline-flex items-center gap-1">
+                    {link.label}
+                    {link.external && (
+                      <ExternalLink className="h-3 w-3 opacity-60" />
+                    )}
+                  </span>
+                </>
+              );
+              return link.external ? (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={className}
+                >
+                  {content}
+                </a>
+              ) : (
+                <Link key={link.href} href={link.href} className={className}>
+                  {content}
                 </Link>
               );
             })}
@@ -130,7 +193,7 @@ export default function Navbar() {
                     <span>{auth.pubkey.slice(0, 2).toUpperCase()}</span>
                   )}
                 </span>
-                <span className="hidden sm:inline text-xs text-foreground truncate max-w-[14ch]">
+                <span className="text-xs text-foreground truncate max-w-[14ch]">
                   {profile?.display_name ||
                     profile?.name ||
                     `${auth.pubkey.slice(0, 6)}…`}
@@ -188,9 +251,25 @@ export default function Navbar() {
               <div className="flex flex-col gap-1 mb-8">
                 {NAV_LINKS.map((link, i) => {
                   const active =
-                    link.href === "/"
-                      ? pathname === "/"
-                      : pathname.startsWith(link.href);
+                    link.external
+                      ? false
+                      : link.href === "/"
+                        ? pathname === "/"
+                        : pathname.startsWith(link.href);
+                  const itemClass = cn(
+                    "flex items-center justify-between gap-2 px-4 py-3 rounded-lg text-base font-medium transition-colors",
+                    active
+                      ? "bg-bitcoin/10 text-bitcoin border border-bitcoin/20"
+                      : "text-foreground-muted hover:text-foreground hover:bg-white/5",
+                  );
+                  const inner = (
+                    <>
+                      <span>{link.label}</span>
+                      {link.external && (
+                        <ExternalLink className="h-4 w-4 opacity-60" />
+                      )}
+                    </>
+                  );
                   return (
                     <motion.div
                       key={link.href}
@@ -198,18 +277,25 @@ export default function Navbar() {
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: 0.05 * i + 0.1 }}
                     >
-                      <Link
-                        href={link.href}
-                        onClick={() => setMobileOpen(false)}
-                        className={cn(
-                          "block px-4 py-3 rounded-lg text-base font-medium transition-colors",
-                          active
-                            ? "bg-bitcoin/10 text-bitcoin border border-bitcoin/20"
-                            : "text-foreground-muted hover:text-foreground hover:bg-white/5",
-                        )}
-                      >
-                        {link.label}
-                      </Link>
+                      {link.external ? (
+                        <a
+                          href={link.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => setMobileOpen(false)}
+                          className={itemClass}
+                        >
+                          {inner}
+                        </a>
+                      ) : (
+                        <Link
+                          href={link.href}
+                          onClick={() => setMobileOpen(false)}
+                          className={itemClass}
+                        >
+                          {inner}
+                        </Link>
+                      )}
                     </motion.div>
                   );
                 })}
@@ -217,14 +303,51 @@ export default function Navbar() {
 
               <div className="mt-auto flex flex-col gap-3">
                 {auth ? (
-                  <Link
-                    href="/dashboard"
-                    onClick={() => setMobileOpen(false)}
-                    className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold bg-gradient-to-r from-bitcoin to-yellow-500 text-black"
-                  >
-                    <LayoutDashboard className="h-4 w-4" />
-                    Mi dashboard
-                  </Link>
+                  <>
+                    <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-white/[0.02]">
+                      <span className="relative h-10 w-10 shrink-0 rounded-full overflow-hidden bg-gradient-to-br from-bitcoin/30 to-nostr/30 ring-1 ring-border-strong flex items-center justify-center text-xs font-display font-bold">
+                        {profile?.picture ? (
+                          <img
+                            src={profile.picture}
+                            alt=""
+                            className="block w-full h-full object-cover object-center"
+                            referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.display =
+                                "none";
+                            }}
+                          />
+                        ) : (
+                          <span>{auth.pubkey.slice(0, 2).toUpperCase()}</span>
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-semibold truncate">
+                          {profile?.display_name ||
+                            profile?.name ||
+                            `${auth.pubkey.slice(0, 10)}…`}
+                        </div>
+                        <div className="text-[11px] text-foreground-subtle font-mono truncate">
+                          {auth.pubkey.slice(0, 10)}…{auth.pubkey.slice(-4)}
+                        </div>
+                      </div>
+                    </div>
+                    <Link
+                      href="/dashboard"
+                      onClick={() => setMobileOpen(false)}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold bg-gradient-to-r from-bitcoin to-yellow-500 text-black"
+                    >
+                      <LayoutDashboard className="h-4 w-4" />
+                      Mi dashboard
+                    </Link>
+                    <button
+                      onClick={handleLogout}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold border border-border hover:bg-danger/10 hover:border-danger/30 hover:text-danger transition-colors"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Cerrar sesión
+                    </button>
+                  </>
                 ) : (
                   <button
                     onClick={() => {

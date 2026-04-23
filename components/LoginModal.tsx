@@ -14,13 +14,18 @@ import {
   Link as LinkIcon,
   QrCode,
   Loader2,
+  Wand2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Logo from "./Logo";
 import { setAuth } from "@/lib/auth";
 import { useScrollLock } from "@/lib/useScrollLock";
+import { useToast } from "./Toast";
+import { cn } from "@/lib/cn";
 import type { BunkerSigner as BunkerSignerType } from "nostr-tools/nip46";
+
+const QR_TIMEOUT_MS = 5 * 60_000;
 
 type Method = "nostr" | "email";
 type NcMode = "picker" | "url" | "qr";
@@ -43,14 +48,6 @@ const nclog = (...args: unknown[]) => {
   if (NC_DEBUG) console.log("[nip46]", ...args);
 };
 
-declare global {
-  interface Window {
-    nostr?: {
-      getPublicKey: () => Promise<string>;
-    };
-  }
-}
-
 export default function LoginModal({
   open,
   onClose,
@@ -59,6 +56,7 @@ export default function LoginModal({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const { push: pushToast } = useToast();
   const [method, setMethod] = useState<Method>("nostr");
   const [email, setEmail] = useState("");
   const [nip07, setNip07] = useState<"checking" | "available" | "missing">(
@@ -72,6 +70,7 @@ export default function LoginModal({
   const [authUrl, setAuthUrl] = useState<string | null>(null);
   const [qrUri, setQrUri] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [qrExpiresAt, setQrExpiresAt] = useState<number | null>(null);
   const [ncDiag, setNcDiag] = useState<string[]>([]);
   const [nip07Loading, setNip07Loading] = useState(false);
   const signerRef = useRef<BunkerSignerType | null>(null);
@@ -128,6 +127,7 @@ export default function LoginModal({
     setAuthUrl(null);
     setQrUri(null);
     setQrDataUrl(null);
+    setQrExpiresAt(null);
     setNcDiag([]);
     setNip07Loading(false);
   }, [open]);
@@ -148,11 +148,12 @@ export default function LoginModal({
     clientSecret: Uint8Array,
     relays: string[],
     bunkerPubkey?: string,
+    secret?: string | null,
   ) {
     setAuth({
       method: "nip46",
       pubkey,
-      bunker: { pubkey: bunkerPubkey, relays },
+      bunker: { pubkey: bunkerPubkey, relays, secret: secret ?? null },
       clientSecret: Array.from(clientSecret),
     });
   }
@@ -171,6 +172,42 @@ export default function LoginModal({
       onClose();
     } catch {
       setNip07Loading(false);
+    }
+  }
+
+  /**
+   * Creates a throwaway identity by generating a random nsec locally,
+   * deriving the pubkey, and persisting both in `labs:auth` so the existing
+   * signer flow (`getSigner` → `method:"local"`) can sign events without
+   * any external extension or bunker. Intended for dev / quick demos.
+   */
+  async function handleRandomUser() {
+    try {
+      const { generateSecretKey, getPublicKey, nip19 } = await import(
+        "nostr-tools"
+      );
+      const sk = generateSecretKey(); // Uint8Array (32 bytes)
+      const pubkey = getPublicKey(sk);
+      setAuth({
+        method: "local",
+        pubkey,
+        localSecret: Array.from(sk),
+      });
+      const npub = nip19.npubEncode(pubkey);
+      pushToast({
+        kind: "info",
+        title: "Usuario aleatorio creado",
+        description: `${npub.slice(0, 14)}…${npub.slice(-6)} · la clave queda en localStorage (sólo dev).`,
+        duration: 8000,
+      });
+      router.push("/dashboard");
+      onClose();
+    } catch (e) {
+      pushToast({
+        kind: "error",
+        title: "No se pudo generar el usuario",
+        description: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 
@@ -209,7 +246,13 @@ export default function LoginModal({
       pushDiag(`✓ conectado, solicitando pubkey…`);
       const pubkey = await signer.getPublicKey();
       pushDiag(`✓ pubkey: ${pubkey.slice(0, 8)}…`);
-      persistAuth(pubkey, clientSecret, pointer.relays, pointer.pubkey);
+      persistAuth(
+        pubkey,
+        clientSecret,
+        pointer.relays,
+        pointer.pubkey,
+        pointer.secret,
+      );
       setNcPubkey(pubkey);
       setNcState("connected");
     } catch (e) {
@@ -264,6 +307,8 @@ export default function LoginModal({
 
       setQrUri(uri);
       setQrDataUrl(dataUrl);
+      const expiresAt = Date.now() + QR_TIMEOUT_MS;
+      setQrExpiresAt(expiresAt);
 
       pushDiag(`client=${clientPubkey.slice(0, 8)}… secret=${secret}`);
       pushDiag(`escuchando ${relays.length} relay(s)`);
@@ -274,6 +319,7 @@ export default function LoginModal({
       const pool = new SimplePool();
 
       type EncEvent = { pubkey: string; content: string; kind: number };
+      const TIMEOUT_SENTINEL = "__qr_timeout__";
 
       const bunkerInfo = await new Promise<{ bunkerPubkey: string }>(
         (resolve, reject) => {
@@ -284,17 +330,10 @@ export default function LoginModal({
             closed = true;
             subCloser?.close();
           };
-          const timer = window.setTimeout(
-            () => {
-              close();
-              reject(
-                new Error(
-                  "Timeout: el firmante no respondió en 5 minutos. Probá de nuevo.",
-                ),
-              );
-            },
-            5 * 60_000,
-          );
+          const timer = window.setTimeout(() => {
+            close();
+            reject(new Error(TIMEOUT_SENTINEL));
+          }, QR_TIMEOUT_MS);
           abort.signal.addEventListener("abort", () => {
             window.clearTimeout(timer);
             close();
@@ -399,12 +438,34 @@ export default function LoginModal({
       pushDiag(`solicitando pubkey del usuario…`);
       const pubkey = await signer.getPublicKey();
       pushDiag(`✓ pubkey recibida: ${pubkey.slice(0, 8)}…`);
-      persistAuth(pubkey, clientSecret, signer.bp.relays, signer.bp.pubkey);
+      persistAuth(
+        pubkey,
+        clientSecret,
+        signer.bp.relays,
+        signer.bp.pubkey,
+        signer.bp.secret ?? secret,
+      );
       setNcPubkey(pubkey);
       setNcState("connected");
     } catch (e) {
       if (abortRef.current?.signal.aborted) return;
       const msg = e instanceof Error ? e.message : "No se pudo conectar";
+      if (msg === "__qr_timeout__") {
+        pushDiag(`✗ timeout: el QR expiró después de 5 minutos`);
+        setQrUri(null);
+        setQrDataUrl(null);
+        setQrExpiresAt(null);
+        setAuthUrl(null);
+        setNcError(null);
+        setNcState("idle");
+        pushToast({
+          kind: "info",
+          title: "El QR expiró",
+          description:
+            "Pasaron 5 minutos sin respuesta. Volvé a intentarlo cuando estés listo.",
+        });
+        return;
+      }
       pushDiag(`✗ error: ${msg}`);
       setNcError(msg);
       setNcState("error");
@@ -627,6 +688,20 @@ export default function LoginModal({
                         Empezá acá →
                       </a>
                     </p>
+
+                    <div className="pt-1 flex flex-col items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={handleRandomUser}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-dashed border-foreground-subtle/40 bg-white/[0.02] hover:bg-white/[0.06] hover:border-nostr/50 text-[11px] font-mono tracking-wider text-foreground-muted hover:text-nostr transition-colors"
+                      >
+                        <Wand2 className="h-3 w-3" />
+                        Generar usuario random
+                      </button>
+                      <span className="text-[9px] text-foreground-subtle">
+                        dev · nsec guardada en localStorage
+                      </span>
+                    </div>
                   </motion.div>
                 )}
 
@@ -678,6 +753,7 @@ export default function LoginModal({
                         dataUrl={qrDataUrl}
                         authUrl={authUrl}
                         diag={ncDiag}
+                        expiresAt={qrExpiresAt}
                       />
                     )}
 
@@ -818,13 +894,29 @@ function NcQr({
   dataUrl,
   authUrl,
   diag,
+  expiresAt,
 }: {
   uri: string | null;
   dataUrl: string | null;
   authUrl: string | null;
   diag: string[];
+  expiresAt: number | null;
 }) {
   const [copied, setCopied] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!expiresAt) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [expiresAt]);
+
+  const remainingMs = expiresAt ? Math.max(0, expiresAt - now) : null;
+  const countdown =
+    remainingMs !== null
+      ? `${Math.floor(remainingMs / 60000)}:${String(
+          Math.floor((remainingMs % 60000) / 1000),
+        ).padStart(2, "0")}`
+      : null;
   async function copy() {
     if (!uri) return;
     try {
@@ -861,12 +953,27 @@ function NcQr({
         )}
       </div>
 
-      <div className="inline-flex items-center gap-1.5 text-[10px] font-mono text-cyan">
-        <span className="relative flex h-1.5 w-1.5">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan opacity-75" />
-          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan" />
-        </span>
-        ESPERANDO FIRMANTE…
+      <div className="flex items-center gap-3 text-[10px] font-mono">
+        <div className="inline-flex items-center gap-1.5 text-cyan">
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan opacity-75" />
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan" />
+          </span>
+          ESPERANDO FIRMANTE…
+        </div>
+        {countdown && (
+          <span className="text-foreground-subtle">
+            expira en{" "}
+            <span
+              className={cn(
+                "text-foreground font-semibold tabular-nums",
+                remainingMs !== null && remainingMs < 30_000 && "text-danger",
+              )}
+            >
+              {countdown}
+            </span>
+          </span>
+        )}
       </div>
 
       {uri && (
