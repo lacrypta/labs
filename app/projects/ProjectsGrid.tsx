@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   ArrowUpRight,
   ExternalLink,
@@ -25,6 +26,7 @@ import {
 import {
   fetchCommunityProjects,
   getCachedCommunityProjects,
+  fetchAuthorPictures,
   TOP10_RELAYS,
   type CommunityProject,
   type CommunityScanProgress,
@@ -177,6 +179,7 @@ function nostrToDisplay(np: CommunityProject): DisplayProject {
 export default function ProjectsGrid() {
   const [filter, setFilter] = useState<FilterId>("all");
   const [query, setQuery] = useState("");
+  const [authorPictures, setAuthorPictures] = useState<Map<string, string>>(new Map());
   const {
     projects: nostrProjects,
     scanning,
@@ -184,6 +187,12 @@ export default function ProjectsGrid() {
     error: scanError,
     rescan,
   } = useNostrCommunityProjects();
+
+  useEffect(() => {
+    if (nostrProjects.length === 0) return;
+    const pubkeys = [...new Set(nostrProjects.map((p) => p.author))];
+    fetchAuthorPictures(pubkeys, TOP10_RELAYS).then(setAuthorPictures);
+  }, [nostrProjects]);
 
   const allProjects = useMemo<DisplayProject[]>(() => {
     const builtins = PROJECTS.map(toDisplay);
@@ -314,7 +323,11 @@ export default function ProjectsGrid() {
         >
           <AnimatePresence mode="popLayout">
             {filtered.map((project) => (
-              <ProjectCard key={project.id} project={project} />
+              <ProjectCard
+                key={project.id}
+                project={project}
+                authorPicture={project.author ? authorPictures.get(project.author) : undefined}
+              />
             ))}
           </AnimatePresence>
         </motion.div>
@@ -525,15 +538,24 @@ function RelayRow({ status }: { status: RelayScanStatus }) {
 
 /* ─────────────────────────── card ──────────────────────────────────────── */
 
-function ProjectCard({ project }: { project: DisplayProject }) {
+function ProjectCard({ project, authorPicture }: { project: DisplayProject; authorPicture?: string }) {
   const status = getBadge(project);
-  const href = project.demo || project.website || project.repo || "#";
-  const external = Boolean(project.demo || project.website || project.repo);
 
-  const Wrapper: React.ElementType = external ? "a" : "div";
-  const wrapperProps = external
-    ? { href, target: "_blank", rel: "noopener noreferrer" }
-    : {};
+  const nostrProjectId =
+    project.source === "nostr" && project.author
+      ? project.id.slice(`nostr:${project.author}:`.length)
+      : null;
+  const internalHref = nostrProjectId
+    ? `/projects/${project.author}/${nostrProjectId}`
+    : null;
+  const externalHref = project.demo || project.website || project.repo;
+
+  const Wrapper: React.ElementType = internalHref ? Link : externalHref ? "a" : "div";
+  const wrapperProps = internalHref
+    ? { href: internalHref }
+    : externalHref
+      ? { href: externalHref, target: "_blank", rel: "noopener noreferrer" }
+      : {};
 
   return (
     <motion.div
@@ -551,31 +573,41 @@ function ProjectCard({ project }: { project: DisplayProject }) {
 
         <div className="relative flex flex-col h-full p-6">
           <div className="flex items-start justify-between gap-3 mb-4">
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-mono font-semibold tracking-widest whitespace-nowrap",
-                status.bg,
-                status.border,
-                status.text,
-              )}
-            >
-              {project.source === "nostr" && <Radio className="h-2.5 w-2.5" />}
-              {status.label}
-            </span>
-            {project.hackathon && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-mono text-foreground-subtle">
-                <Calendar className="h-3 w-3" />
-                {HACKATHON_LABELS[project.hackathon].split(" · ")[1]}
-              </span>
-            )}
-            {project.source === "nostr" && project.nostrCreatedAt && (
-              <span className="inline-flex items-center gap-1 text-[10px] font-mono text-foreground-subtle">
-                <Calendar className="h-3 w-3" />
-                {new Date(project.nostrCreatedAt * 1000).toLocaleDateString(
-                  "es-AR",
-                  { day: "2-digit", month: "short" },
+            <div className="flex flex-col gap-1.5">
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-mono font-semibold tracking-widest whitespace-nowrap",
+                  status.bg,
+                  status.border,
+                  status.text,
                 )}
+              >
+                {project.source === "nostr" && <Radio className="h-2.5 w-2.5" />}
+                {status.label}
               </span>
+              {project.hackathon && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-mono text-foreground-subtle">
+                  <Calendar className="h-3 w-3" />
+                  {HACKATHON_LABELS[project.hackathon].split(" · ")[1]}
+                </span>
+              )}
+              {project.source === "nostr" && project.nostrCreatedAt && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-mono text-foreground-subtle">
+                  <Calendar className="h-3 w-3" />
+                  {new Date(project.nostrCreatedAt * 1000).toLocaleDateString(
+                    "es-AR",
+                    { day: "2-digit", month: "short" },
+                  )}
+                </span>
+              )}
+            </div>
+            {authorPicture && (
+              <img
+                src={authorPicture}
+                alt=""
+                className="h-12 w-12 rounded-full object-cover ring-2 ring-nostr/50 shrink-0"
+                onError={(e) => { e.currentTarget.style.display = "none"; }}
+              />
             )}
           </div>
 
