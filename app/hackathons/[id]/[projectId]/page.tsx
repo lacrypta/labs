@@ -22,6 +22,7 @@ import {
 } from "@/lib/hackathons";
 import { GithubIcon } from "@/components/BrandIcons";
 import { cn } from "@/lib/cn";
+import NostrProjectPage from "./NostrProjectPage";
 
 export function generateStaticParams() {
   return HACKATHONS.flatMap((h) =>
@@ -70,8 +71,9 @@ export default async function ProjectPage({
 }) {
   const { id, projectId } = await params;
   const hackathon = getHackathon(id);
+  if (!hackathon) notFound();
   const project = getProject(id, projectId);
-  if (!hackathon || !project) notFound();
+  if (!project) return <NostrProjectPage hackathonId={id} projectId={projectId} />;
 
   const report = project.report;
   const award = prizeForProject(id, projectId);

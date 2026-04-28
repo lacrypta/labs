@@ -20,6 +20,7 @@ import {
   type PrizedProject,
 } from "@/lib/hackathons";
 import {
+  fetchAuthorPictures,
   fetchCommunityProjects,
   getCachedCommunityProjects,
   TOP10_RELAYS,
@@ -61,14 +62,11 @@ export default function HackathonProjectsList({
 }) {
   const [nostrSubmissions, setNostrSubmissions] = useState<
     HackathonSubmission[]
-  >(() => {
-    const cached = getCachedCommunityProjects();
-    if (!cached) return [];
-    return cached
-      .filter((p) => p.hackathon === hackathon.id)
-      .map(fromCommunity);
-  });
+  >([]);
   const [scanning, setScanning] = useState(false);
+  const [authorPictures, setAuthorPictures] = useState<Map<string, string>>(
+    new Map(),
+  );
 
   const awards = useMemo<PrizedProject[]>(
     () => prizedProjects(hackathon.id),
@@ -89,9 +87,12 @@ export default function HackathonProjectsList({
     setScanning(true);
     try {
       const all = await fetchCommunityProjects(TOP10_RELAYS);
-      setNostrSubmissions(
-        all.filter((p) => p.hackathon === hackathon.id).map(fromCommunity),
-      );
+      const filtered = all.filter((p) => p.hackathon === hackathon.id);
+      setNostrSubmissions(filtered.map(fromCommunity));
+      const pubkeys = [...new Set(filtered.map((p) => p.author))];
+      if (pubkeys.length > 0) {
+        fetchAuthorPictures(pubkeys, TOP10_RELAYS).then(setAuthorPictures);
+      }
     } catch (e) {
       console.warn("[labs] hackathon scan failed", e);
     } finally {
@@ -100,6 +101,21 @@ export default function HackathonProjectsList({
   }
 
   useEffect(() => {
+    // Read cache after hydration to avoid server/client mismatch
+    const cached = getCachedCommunityProjects();
+    if (cached) {
+      const filtered = cached.filter((p) => p.hackathon === hackathon.id);
+      if (filtered.length > 0) {
+        setNostrSubmissions(filtered.map(fromCommunity));
+        // Seed pictures from whatever the project event stored in team members
+        const pics = new Map<string, string>();
+        for (const p of filtered) {
+          const pic = p.team[0]?.picture;
+          if (pic) pics.set(p.author, pic);
+        }
+        if (pics.size > 0) setAuthorPictures(pics);
+      }
+    }
     scan();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hackathon.id]);
@@ -163,6 +179,11 @@ export default function HackathonProjectsList({
                 project={p}
                 hackathonId={hackathon.id}
                 award={prizeByProjectId.get(p.id) ?? null}
+                authorPicture={
+                  p.nostrAuthor
+                    ? authorPictures.get(p.nostrAuthor)
+                    : undefined
+                }
               />
             ))}
           </div>
@@ -176,28 +197,21 @@ function ProjectRow({
   project,
   hackathonId,
   award,
+  authorPicture,
 }: {
   project: HackathonSubmission;
   hackathonId: string;
   award: PrizedProject | null;
+  authorPicture?: string;
 }) {
   const pos = project.report?.position;
   const score = project.report?.finalScore;
   const prize = award?.prize ?? null;
   const isNostr = !!project.nostrEventId;
-  const href = isNostr
-    ? project.demo || project.repo || "#"
-    : `/hackathons/${hackathonId}/${project.id}`;
-  const external = isNostr;
+  const href = `/hackathons/${hackathonId}/${project.id}`;
 
-  const Wrapper: React.ElementType = isNostr ? "a" : Link;
-  const wrapperProps = isNostr
-    ? {
-        href,
-        target: "_blank",
-        rel: "noopener noreferrer",
-      }
-    : { href };
+  const Wrapper: React.ElementType = Link;
+  const wrapperProps = { href };
 
   return (
     <Wrapper
@@ -221,7 +235,25 @@ function ProjectRow({
           </>
         ) : isNostr ? (
           <>
-            <CircleDashed className="h-4 w-4 text-nostr" />
+            {authorPicture ? (
+              <img
+                src={authorPicture}
+                alt=""
+                className="h-8 w-8 rounded-full object-cover ring-1 ring-nostr/40"
+                onError={(e) => {
+                  e.currentTarget.style.display = "none";
+                  e.currentTarget.nextElementSibling?.classList.remove(
+                    "hidden",
+                  );
+                }}
+              />
+            ) : null}
+            <CircleDashed
+              className={cn(
+                "h-4 w-4 text-nostr",
+                authorPicture && "hidden",
+              )}
+            />
             <div className="mt-1 text-[9px] font-mono uppercase tracking-widest text-nostr">
               NOSTR
             </div>
