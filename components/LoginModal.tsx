@@ -295,7 +295,7 @@ export default function LoginModal({
         clientPubkey,
         relays,
         secret,
-        name: "La Crypta Labs",
+        name: "La Crypta Dev",
         url: siteOrigin,
         perms: ["get_public_key", "sign_event:1", "sign_event:22242"],
       });
@@ -517,7 +517,7 @@ export default function LoginModal({
                     Hola de nuevo
                   </h2>
                   <p className="text-sm text-foreground-muted">
-                    Ingresá a La Crypta Labs
+                    Ingresá a La Crypta Dev
                   </p>
                 </div>
               </div>

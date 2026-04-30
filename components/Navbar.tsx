@@ -241,7 +241,7 @@ export default function Navbar() {
 
           <div className="flex items-center gap-3">
             <a
-              href="https://github.com/lacrypta"
+              href="https://github.com/lacrypta-dev"
               target="_blank"
               rel="noopener noreferrer"
               className="hidden md:inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-foreground-muted hover:text-foreground hover:bg-white/5 transition-colors"
@@ -365,7 +365,7 @@ export default function Navbar() {
               className="text-center"
             >
               <p className="text-[11px] font-mono tracking-[0.25em] uppercase text-foreground-subtle mb-4">
-                La Crypta Labs
+                La Crypta Dev
               </p>
               <h1 className="font-display text-6xl xl:text-7xl font-bold tracking-tight leading-tight">
                 <span className="text-foreground-muted">Aprendé </span>
@@ -593,7 +593,7 @@ export default function Navbar() {
                   </button>
                 )}
                 <a
-                  href="https://github.com/lacrypta"
+                  href="https://github.com/lacrypta-dev"
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => setMobileOpen(false)}

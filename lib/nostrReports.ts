@@ -27,11 +27,11 @@ export type HackathonResults = {
 // ─── d-tag helpers ───────────────────────────────────────────────────────────
 
 export function reportDTag(hackathonId: string, projectId: string): string {
-  return `lacrypta.labs:hackathon:${hackathonId}:report:${projectId}`;
+  return `lacrypta.dev:hackathon:${hackathonId}:report:${projectId}`;
 }
 
 export function resultsDTag(hackathonId: string): string {
-  return `lacrypta.labs:hackathon:${hackathonId}:results`;
+  return `lacrypta.dev:hackathon:${hackathonId}:results`;
 }
 
 // ─── event builders ──────────────────────────────────────────────────────────
@@ -51,10 +51,10 @@ export function buildReportEvent(
       ["d", reportDTag(hackathonId, projectId)],
       ["h", hackathonId],
       ["p", projectPubkey],
-      ["t", "lacrypta-labs-report"],
+      ["t", "lacrypta-dev-report"],
       // Indexed reference to the NIP-78 project event so any relay can
-      // answer { "#i": ["30078:<pubkey>:lacrypta.labs:project:<id>"] }
-      ["i", `30078:${projectPubkey}:lacrypta.labs:project:${projectId}`],
+      // answer { "#i": ["30078:<pubkey>:lacrypta.dev:project:<id>"] }
+      ["i", `30078:${projectPubkey}:lacrypta.dev:project:${projectId}`],
     ],
     content: JSON.stringify(report),
   };
@@ -68,7 +68,7 @@ export function buildResultsEvent(
   const tags: string[][] = [
     ["d", resultsDTag(hackathonId)],
     ["h", hackathonId],
-    ["t", "lacrypta-labs-results"],
+    ["t", "lacrypta-dev-results"],
   ];
   for (const w of winners) {
     tags.push(["p", w.pubkey]);

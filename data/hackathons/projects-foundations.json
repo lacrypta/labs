@@ -10,11 +10,11 @@
       "team": [
         {
           "name": "La Crypta",
-          "github": "lacrypta",
+          "github": "lacrypta-dev",
           "role": "Organizers"
         }
       ],
-      "repo": "https://github.com/lacrypta/lightning-starter",
+      "repo": "https://github.com/lacrypta-dev/lightning-starter",
       "demo": "https://lightning-starter.vercel.app",
       "tech": [
         "Alby SDK",

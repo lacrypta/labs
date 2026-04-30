@@ -76,7 +76,7 @@ export default function Mission() {
             transition={{ duration: 0.5, delay: 0.2 }}
             className="mt-6 text-lg text-foreground-muted leading-relaxed max-w-2xl"
           >
-            La Crypta Labs es el brazo de I+D de{" "}
+            La Crypta Dev es el brazo de I+D de{" "}
             <a
               href="https://lacrypta.ar"
               target="_blank"

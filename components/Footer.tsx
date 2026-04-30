@@ -5,7 +5,7 @@ import { GithubIcon, XIcon } from "@/components/BrandIcons";
 
 const COLS = [
   {
-    title: "Labs",
+    title: "Dev",
     links: [
       { href: "/", label: "Inicio" },
       { href: "/infrastructure", label: "Infraestructura" },
@@ -27,7 +27,7 @@ const COLS = [
     title: "Construí",
     links: [
       {
-        href: "https://github.com/lacrypta",
+        href: "https://github.com/lacrypta-dev",
         label: "GitHub",
         external: true,
       },
@@ -53,7 +53,7 @@ export default function Footer() {
             </p>
             <div className="mt-5 flex items-center gap-2">
               <a
-                href="https://github.com/lacrypta"
+                href="https://github.com/lacrypta-dev"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border text-foreground-muted hover:text-foreground hover:bg-white/5 transition-colors"
@@ -117,7 +117,7 @@ export default function Footer() {
 
         <div className="mt-12 pt-6 border-t border-border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <p className="text-xs text-foreground-subtle font-mono">
-            © {new Date().getFullYear()} La Crypta Labs · Buenos Aires,
+            © {new Date().getFullYear()} La Crypta Dev · Buenos Aires,
             Argentina · Hecho con software libre
           </p>
           <div className="flex items-center gap-3 text-xs text-foreground-subtle">

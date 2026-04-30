@@ -55,7 +55,7 @@ export default function Logo({
       </svg>
       {showLabs && (
         <span className="self-end mb-[5px] font-mono font-black text-[14px] tracking-[0.3em] text-bitcoin shrink-0 leading-none">
-          LABS
+          DEV
         </span>
       )}
     </div>

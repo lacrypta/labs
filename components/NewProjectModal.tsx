@@ -215,10 +215,14 @@ export default function NewProjectModal({
   hackathonId,
   open,
   onClose,
+  editProject,
+  onSaved,
 }: {
   hackathonId?: string;
   open: boolean;
   onClose: () => void;
+  editProject?: UserProject;
+  onSaved?: (project: UserProject) => void;
 }) {
   const { auth } = useAuth();
   const { push: pushToast } = useToast();
@@ -254,9 +258,30 @@ export default function NewProjectModal({
 
   useEffect(() => {
     if (open) {
-      setForm({ name: "", description: "", demo: "", repo: "", tech: [], team: [ownerRow()], hackathon: hackathonId ?? "" });
+      if (editProject) {
+        setForm({
+          name: editProject.name,
+          description: editProject.description ?? "",
+          demo: editProject.demo ?? "",
+          repo: editProject.repo ?? "",
+          tech: editProject.tech ?? [],
+          team: editProject.team.map((m) => ({
+            key: newRowKey(),
+            nip05: m.nip05 ?? "",
+            pubkey: m.pubkey,
+            name: m.name,
+            picture: m.picture,
+            owner: m.pubkey === auth?.pubkey,
+            role: m.role,
+          })),
+          hackathon: editProject.hackathon ?? "",
+        });
+        setStep("form");
+      } else {
+        setForm({ name: "", description: "", demo: "", repo: "", tech: [], team: [ownerRow()], hackathon: hackathonId ?? "" });
+        setStep("repo");
+      }
       setError(null);
-      setStep("repo");
       setFetchError(null);
       setOptimisticClosed(false);
     }
@@ -294,6 +319,7 @@ export default function NewProjectModal({
     const name = form.name.trim();
     if (!name) { setError("El nombre es obligatorio"); return; }
 
+    const isEdit = !!editProject;
     const now = Math.floor(Date.now() / 1000);
     const today = new Date().toISOString().slice(0, 10);
 
@@ -307,17 +333,17 @@ export default function NewProjectModal({
 
     const hackathon = form.hackathon.trim() || null;
     const project: UserProject = {
-      id: crypto.randomUUID(),
+      id: editProject?.id ?? crypto.randomUUID(),
       name,
       description: form.description.trim(),
       team,
       repo: form.repo.trim() || undefined,
       demo: form.demo.trim() || undefined,
       tech: form.tech.length ? form.tech : undefined,
-      status: hackathon ? "submitted" : "building",
+      status: isEdit ? editProject!.status : (hackathon ? "submitted" : "building"),
       hackathon,
-      submittedAt: hackathon ? today : undefined,
-      createdAt: now,
+      submittedAt: isEdit ? editProject!.submittedAt : (hackathon ? today : undefined),
+      createdAt: isEdit ? editProject!.createdAt : now,
       updatedAt: now,
     };
 
@@ -336,12 +362,13 @@ export default function NewProjectModal({
       });
       setPhase("publishing");
       setOptimisticClosed(true);
+      if (isEdit) onSaved?.(project);
       const result = await publishUserProject(signer, project, relays, {
         onRelayResult: (r) => setRelayResults((prev) => [...prev, r]),
       });
       const okCount = result.relays.filter((r) => r.ok).length;
       setPhase("done");
-      pushToast({ kind: "success", title: "Proyecto creado", description: `Publicado en ${okCount}/${result.relays.length} relays.` });
+      pushToast({ kind: "success", title: isEdit ? "Proyecto actualizado" : "Proyecto creado", description: `Publicado en ${okCount}/${result.relays.length} relays.` });
       if (form.hackathon) {
         window.dispatchEvent(new CustomEvent("labs:project-published", { detail: { hackathonId: form.hackathon } }));
       }
@@ -350,7 +377,7 @@ export default function NewProjectModal({
       const msg = e instanceof Error ? e.message : String(e);
       setOptimisticClosed(false);
       setError(msg);
-      pushToast({ kind: "error", title: "No se pudo crear el proyecto", description: msg, duration: 12000 });
+      pushToast({ kind: "error", title: isEdit ? "No se pudo actualizar el proyecto" : "No se pudo crear el proyecto", description: msg, duration: 12000 });
     } finally {
       signer?.close?.().catch(() => {});
       setPublishing(false);
@@ -418,13 +445,13 @@ export default function NewProjectModal({
 
             <div className="relative px-6 pt-6 pb-5 border-b border-border flex items-center justify-between">
               <div>
-                <h2 className="font-display font-bold text-xl">Nuevo proyecto</h2>
+                <h2 className="font-display font-bold text-xl">{editProject ? "Editar proyecto" : "Nuevo proyecto"}</h2>
                 <p className="text-xs text-foreground-muted mt-0.5">
                   Se firma con tu clave y se publica en los relays.
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                {step !== "fetching" && (
+                {!editProject && step !== "fetching" && (
                   <span className="text-[10px] font-mono text-foreground-subtle">
                     {step === "repo" ? "1" : "2"} / 2
                   </span>
@@ -562,13 +589,15 @@ export default function NewProjectModal({
                   onChange={(team) => setForm({ ...form, team })}
                   disabled={publishing}
                 />
-                <button
-                  type="button"
-                  onClick={() => { setStep("repo"); setFetchError(null); }}
-                  className="text-[11px] text-foreground-subtle hover:text-foreground-muted transition-colors"
-                >
-                  ← Cambiar repositorio
-                </button>
+                {!editProject && (
+                  <button
+                    type="button"
+                    onClick={() => { setStep("repo"); setFetchError(null); }}
+                    className="text-[11px] text-foreground-subtle hover:text-foreground-muted transition-colors"
+                  >
+                    ← Cambiar repositorio
+                  </button>
+                )}
               </div>
             )}
 
@@ -608,7 +637,7 @@ export default function NewProjectModal({
                     {publishing ? (
                       <><Loader2 className="h-4 w-4 animate-spin" />{phaseLabel}</>
                     ) : (
-                      <><Save className="h-4 w-4" />Crear</>
+                      <><Save className="h-4 w-4" />{editProject ? "Guardar" : "Crear"}</>
                     )}
                   </button>
                 </>

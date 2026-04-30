@@ -101,7 +101,7 @@ async function signUploadAuth(
       ["x", sha],
       ["expiration", String(now + ttlSec)],
     ],
-    content: "Upload image · La Crypta Labs",
+    content: "Upload image · La Crypta Dev",
   };
   return signer.signEvent(unsigned);
 }

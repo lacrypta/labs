@@ -429,7 +429,7 @@ function NostrScanPanel({
             <span className="text-foreground-muted">
               tag{" "}
               <span className="font-semibold text-foreground">
-                #lacrypta-labs-project
+                #lacrypta-dev-project
               </span>
             </span>
           </div>

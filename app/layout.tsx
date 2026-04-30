@@ -24,13 +24,13 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://labs.lacrypta.ar"),
+  metadataBase: new URL("https://lacrypta.dev"),
   title: {
-    default: "La Crypta Labs — Explorando Bitcoin, Lightning y Nostr",
-    template: "%s · La Crypta Labs",
+    default: "La Crypta Dev — Explorando Bitcoin, Lightning y Nostr",
+    template: "%s · La Crypta Dev",
   },
   description:
-    "La Crypta Labs — investigación open source, prototipos y productos reales sobre Bitcoin, Lightning y Nostr. Infraestructura, hackatones y talleres de la comunidad La Crypta.",
+    "La Crypta Dev — investigación open source, prototipos y productos reales sobre Bitcoin, Lightning y Nostr. Infraestructura, hackatones y talleres de la comunidad La Crypta.",
   keywords: [
     "Bitcoin",
     "Lightning Network",
@@ -42,18 +42,18 @@ export const metadata: Metadata = {
     "Hackatón",
     "Blossom",
   ],
-  authors: [{ name: "La Crypta Labs" }],
+  authors: [{ name: "La Crypta Dev" }],
   openGraph: {
-    title: "La Crypta Labs",
+    title: "La Crypta Dev",
     description:
       "Investigación, prototipos y productos open source sobre Bitcoin, Lightning y Nostr.",
     type: "website",
-    siteName: "La Crypta Labs",
+    siteName: "La Crypta Dev",
     locale: "es_AR",
   },
   twitter: {
     card: "summary_large_image",
-    title: "La Crypta Labs",
+    title: "La Crypta Dev",
     description:
       "Investigación, prototipos y productos open source sobre Bitcoin, Lightning y Nostr.",
   },

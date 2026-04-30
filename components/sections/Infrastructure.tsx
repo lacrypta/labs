@@ -8,7 +8,6 @@ import {
   Radio,
   Flower2,
   Wallet,
-  Sparkles,
   ArrowRight,
   Bitcoin,
   Activity,
@@ -43,7 +42,6 @@ export const SERVICES: Service[] = [
       { label: "Prune", value: "archival" },
     ],
     feature: true,
-    href: "/infrastructure#bitcoin",
   },
   {
     id: "lightning",
@@ -58,7 +56,6 @@ export const SERVICES: Service[] = [
       { label: "Canales", value: "públicos" },
     ],
     feature: true,
-    href: "/infrastructure#lightning",
   },
   {
     id: "nostr",
@@ -96,19 +93,6 @@ export const SERVICES: Service[] = [
     accent: "nostr",
     stats: [
       { label: "Licencia", value: "MIT" },
-      { label: "Disponibilidad", value: "pronto" },
-    ],
-  },
-  {
-    id: "ai",
-    name: "Gateway de IA",
-    description:
-      "Un gateway abierto para rutear pedidos a LLMs a través de pagos nativos en Lightning. Pagá por token, sin cuentas.",
-    status: "coming",
-    icon: Sparkles,
-    accent: "green",
-    stats: [
-      { label: "Pagos", value: "L402" },
       { label: "Disponibilidad", value: "pronto" },
     ],
   },

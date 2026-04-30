@@ -9,11 +9,11 @@
       "team": [
         {
           "name": "La Crypta",
-          "github": "lacrypta",
+          "github": "lacrypta-dev",
           "role": "Organizers"
         }
       ],
-      "repo": "https://github.com/lacrypta/nostr-starter",
+      "repo": "https://github.com/lacrypta-dev/nostr-starter",
       "demo": "",
       "tech": [
         "Nostr",

@@ -10,9 +10,9 @@ import type {
 /** NIP-78 parameterized replaceable event kind */
 export const PROJECT_KIND = 30078;
 /** Indexable hashtag every Labs project event carries */
-export const PROJECT_TAG = "lacrypta-labs-project";
+export const PROJECT_TAG = "lacrypta-dev-project";
 /** `d` tag prefix; the suffix is the project's stable local id */
-export const PROJECT_D_PREFIX = "lacrypta.labs:project:";
+export const PROJECT_D_PREFIX = "lacrypta.dev:project:";
 
 /**
  * User projects published via NIP-78 share the same shape as curated
@@ -130,6 +130,15 @@ function setCachedCommunityProjects(projects: CommunityProject[]) {
   } catch {
     /* quota */
   }
+}
+
+export function patchCachedCommunityProject(project: CommunityProject) {
+  const cached = getCachedCommunityProjects();
+  if (!cached) return;
+  const idx = cached.findIndex((p) => p.id === project.id && p.author === project.author);
+  if (idx === -1) return;
+  cached[idx] = project;
+  setCachedCommunityProjects(cached);
 }
 
 /* ────────────────────────────── parsers ────────────────────────────────── */
@@ -358,7 +367,7 @@ function buildProjectEvent(
             ["h", project.hackathon],
           ]
         : []),
-      ["client", "La Crypta Labs"],
+      ["client", "La Crypta Dev"],
       ...(project.name ? [["name", project.name]] : []),
       ...(project.repo ? [["r", project.repo]] : []),
       ...(project.demo ? [["r", project.demo]] : []),
@@ -389,24 +398,44 @@ async function publishSignedEvent(
 ): Promise<PublishProjectResult["relays"]> {
   const { SimplePool } = await import("nostr-tools/pool");
   const pool = new SimplePool();
-  console.log("[labs:publish] signing id:", signed.id, "kind:", signed.kind, "relays:", relays);
+  // Default maxWaitForConnection is 3 s — too short for slow relays.
+  pool.maxWaitForConnection = perRelayTimeoutMs;
+
+  const safetyMs = perRelayTimeoutMs + 3000;
+
+  // Publish to all relays in one call so the pool opens all connections together.
   const promises = pool.publish(relays, signed);
+  console.log("[labs:publish] id:", signed.id, "relays:", relays);
+
   const results = await Promise.all(
-    promises.map(async (p, i) => {
-      const relay = relays[i];
-      try {
-        const resolved = await withTimeout(p, perRelayTimeoutMs, relay);
-        // nostr-tools resolves (not rejects) on connection failure with "connection failure: ..."
-        if (
-          resolved === undefined ||
-          (typeof resolved === "string" && resolved.startsWith("connection failure:"))
-        ) {
-          throw new Error(typeof resolved === "string" ? resolved : "relay rechazó o no respondió");
+    relays.map(async (relay, i) => {
+      const handle = async (p: Promise<string>, attempt: number): Promise<{ relay: string; ok: boolean; error?: string }> => {
+        const resolved = await withTimeout(p, safetyMs, relay).catch((e: unknown) => {
+          throw e instanceof Error ? e : new Error(String(e));
+        });
+
+        if (resolved === undefined || (typeof resolved === "string" && resolved.startsWith("connection failure:"))) {
+          if (attempt === 1) {
+            // Retry on the same pool — it reuses the existing relay connection.
+            await new Promise((r) => setTimeout(r, 1000));
+            const [rp] = pool.publish([relay], signed);
+            return handle(rp, 2);
+          }
+          const error = typeof resolved === "string" ? resolved : "relay rechazó o no respondió";
+          console.warn(`[labs:publish] ✗ ${relay} (attempt ${attempt}):`, error);
+          const r = { relay, ok: false as const, error };
+          onRelayResult?.(r);
+          return r;
         }
-        console.log(`[labs:publish] ✓ ${relay}: ok (reason: ${JSON.stringify(resolved)})`);
+
+        console.log(`[labs:publish] ✓ ${relay} (attempt ${attempt})`);
         const r = { relay, ok: true as const };
         onRelayResult?.(r);
         return r;
+      };
+
+      try {
+        return await handle(promises[i], 1);
       } catch (e) {
         const error = e instanceof Error ? e.message : String(e);
         console.warn(`[labs:publish] ✗ ${relay}:`, error);
@@ -416,6 +445,7 @@ async function publishSignedEvent(
       }
     }),
   );
+
   try {
     pool.close(relays);
   } catch {
@@ -654,6 +684,53 @@ export async function fetchProjectByDTag(
   try {
     pool.close(relays);
   } catch {}
+
+  return found;
+}
+
+/**
+ * Fetch a single community project by its d-tag id, from multiple relays.
+ * Optionally pass authorHint to add an `authors` filter for a faster query.
+ * Returns the newest matching event as a CommunityProject, or null.
+ */
+export async function refetchCommunityProjectById(
+  projectId: string,
+  relays: string[] = TOP10_RELAYS,
+  timeoutMs = 5000,
+  authorHint?: string,
+): Promise<CommunityProject | null> {
+  const { SimplePool } = await import("nostr-tools/pool");
+  const pool = new SimplePool();
+  let found: CommunityProject | null = null;
+
+  const filter: { kinds: number[]; "#d": string[]; authors?: string[] } = {
+    kinds: [PROJECT_KIND],
+    "#d": [projectDTag(projectId)],
+  };
+  if (authorHint) filter.authors = [authorHint];
+
+  const closer = pool.subscribe(relays, filter, {
+    onevent(ev: IncomingEvent) {
+      const base = parseProjectContent(ev);
+      if (!base) return;
+      const candidate: CommunityProject = {
+        ...base,
+        author: ev.pubkey,
+        eventId: ev.id,
+        eventCreatedAt: ev.created_at,
+      };
+      if (!found || ev.created_at > found.eventCreatedAt) {
+        found = candidate;
+      }
+    },
+    oneose() {
+      closer.close();
+    },
+  });
+
+  await new Promise((r) => setTimeout(r, timeoutMs));
+  closer.close();
+  try { pool.close(relays); } catch {}
 
   return found;
 }

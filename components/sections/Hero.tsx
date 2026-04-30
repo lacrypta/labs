@@ -80,7 +80,7 @@ export default function Hero() {
             transition={{ duration: 0.7, delay: 0.3 }}
             className="mt-8 text-lg sm:text-xl text-foreground-muted max-w-2xl leading-relaxed"
           >
-            La Crypta Labs explora, investiga y lanza prototipos y productos
+            La Crypta Dev explora, investiga y lanza prototipos y productos
             reales sobre{" "}
             <span className="text-bitcoin font-semibold">Bitcoin</span>,{" "}
             <span className="text-lightning font-semibold">Lightning</span> y{" "}
@@ -122,12 +122,12 @@ export default function Hero() {
             <GithubIcon className="h-3.5 w-3.5" />
             <span>100% código abierto ·</span>
             <a
-              href="https://github.com/lacrypta"
+              href="https://github.com/lacrypta-dev"
               target="_blank"
               rel="noopener noreferrer"
               className="text-foreground-muted hover:text-bitcoin transition-colors"
             >
-              github.com/lacrypta
+              github.com/lacrypta-dev
             </a>
           </motion.div>
         </div>

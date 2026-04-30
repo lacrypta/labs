@@ -170,7 +170,7 @@ export default function StandaloneProjectPage({
                   <span className="text-foreground-muted">pubkey </span>{pubkey}
                 </p>
                 <p className="text-[10px] font-mono text-foreground-subtle break-all">
-                  <span className="text-foreground-muted">d </span>lacrypta.labs:project:{projectId}
+                  <span className="text-foreground-muted">d </span>lacrypta.dev:project:{projectId}
                 </p>
               </div>
             </div>

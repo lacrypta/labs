@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
+  Archive,
   ArrowLeft,
   ExternalLink,
   Loader2,
+  Pencil,
   Users,
   Zap,
   CircleDashed,
@@ -13,15 +16,23 @@ import {
 import {
   getCachedCommunityProjects,
   fetchCommunityProjects,
+  refetchCommunityProjectById,
   fetchAuthorPictures,
+  archiveUserProject,
+  patchCachedCommunityProject,
   TOP10_RELAYS,
+  DEFAULT_USER_RELAYS,
   type CommunityProject,
 } from "@/lib/userProjects";
 import { getHackathon, type Hackathon } from "@/lib/hackathons";
 import { useProjectReport } from "@/lib/nostrReports";
+import { useAuth } from "@/lib/auth";
+import { getSigner } from "@/lib/nostrSigner";
+import { useToast } from "@/components/Toast";
 import { GithubIcon } from "@/components/BrandIcons";
 import { cn } from "@/lib/cn";
 import { Trophy, Lightbulb, AlertTriangle } from "lucide-react";
+import NewProjectModal from "@/components/NewProjectModal";
 
 const STATUS_BADGE: Record<string, string> = {
   official: "bg-bitcoin/10 border-bitcoin/40 text-bitcoin",
@@ -45,35 +56,84 @@ export default function NostrProjectPage({
   const [authorPicture, setAuthorPicture] = useState<string | undefined>();
   const hackathon = getHackathon(hackathonId) as Hackathon;
   const { report } = useProjectReport(hackathonId, projectId);
+  const { auth } = useAuth();
+  const router = useRouter();
+  const { push: pushToast } = useToast();
+  const [editOpen, setEditOpen] = useState(false);
+  const [archiveStep, setArchiveStep] = useState<"idle" | "confirm" | "archiving">("idle");
+  const [revalidating, setRevalidating] = useState(false);
+  const relays = useMemo(() => {
+    const out = new Set<string>(DEFAULT_USER_RELAYS);
+    auth?.bunker?.relays?.forEach((r) => out.add(r));
+    return [...out];
+  }, [auth]);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function load() {
-      let found: CommunityProject | undefined;
-
+      // 1. Show cached version immediately for instant render
       const cached = getCachedCommunityProjects();
-      if (cached) {
-        found = cached.find(
-          (p) => p.id === projectId && p.hackathon === hackathonId,
-        );
-      }
-
-      if (!found) {
-        const all = await fetchCommunityProjects(TOP10_RELAYS);
-        found = all.find(
-          (p) => p.id === projectId && p.hackathon === hackathonId,
-        );
-      }
-
-      setProject(found ?? null);
-
-      if (found?.author) {
-        fetchAuthorPictures([found.author], TOP10_RELAYS).then((pics) => {
-          setAuthorPicture(pics.get(found!.author));
+      const fromCache = cached?.find(
+        (p) => p.id === projectId && p.hackathon === hackathonId,
+      );
+      if (fromCache && !cancelled) {
+        setProject(fromCache);
+        fetchAuthorPictures([fromCache.author], TOP10_RELAYS).then((pics) => {
+          if (!cancelled) setAuthorPicture(pics.get(fromCache.author));
         });
       }
+
+      // 2. Always revalidate from relays
+      if (!cancelled) setRevalidating(true);
+      try {
+        const fresh = fromCache
+          ? await refetchCommunityProjectById(projectId, TOP10_RELAYS, 5000, fromCache.author)
+          : await fetchCommunityProjects(TOP10_RELAYS).then((all) =>
+              all.find((p) => p.id === projectId && p.hackathon === hackathonId) ?? null,
+            );
+
+        if (cancelled) return;
+
+        if (fresh && fresh.hackathon === hackathonId) {
+          setProject(fresh);
+          patchCachedCommunityProject(fresh);
+          if (fresh.author !== fromCache?.author) {
+            fetchAuthorPictures([fresh.author], TOP10_RELAYS).then((pics) => {
+              if (!cancelled) setAuthorPicture(pics.get(fresh.author));
+            });
+          }
+        } else if (!fromCache) {
+          setProject(null);
+        }
+      } finally {
+        if (!cancelled) setRevalidating(false);
+      }
     }
+
     load();
+    return () => { cancelled = true; };
   }, [hackathonId, projectId]);
+
+  async function handleArchive() {
+    if (!auth || !project) return;
+    setArchiveStep("archiving");
+    try {
+      const signer = await getSigner(auth, {
+        onAuthUrl: (url) => {
+          pushToast({ kind: "info", title: "Autorizá la firma en tu bunker", description: url, duration: 20000 });
+          try { window.open(url, "_blank", "noopener,noreferrer"); } catch { /* popup blocked */ }
+        },
+      });
+      await archiveUserProject(signer, project, relays);
+      signer.close?.().catch(() => {});
+      router.back();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      pushToast({ kind: "error", title: "No se pudo archivar el proyecto", description: msg, duration: 12000 });
+      setArchiveStep("idle");
+    }
+  }
 
   if (project === undefined) {
     return (
@@ -179,15 +239,36 @@ export default function NostrProjectPage({
   return (
     <div className="relative pt-24 pb-16">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        <Link
-          href={`/hackathons/${hackathonId}`}
-          className="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-widest text-foreground-muted hover:text-foreground transition-colors mb-6"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          {hackathon?.name ?? "Hackatones"}
-        </Link>
+        <div className="flex items-center gap-3 mb-6">
+          <Link
+            href={`/hackathons/${hackathonId}`}
+            className="inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-widest text-foreground-muted hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            {hackathon?.name ?? "Hackatones"}
+          </Link>
+          {revalidating && (
+            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-nostr/10 border border-nostr/20">
+              <Loader2 className="h-2.5 w-2.5 animate-spin text-nostr" />
+              <span className="text-[9px] font-mono text-nostr">sincronizando…</span>
+            </span>
+          )}
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-8">
+          {auth?.pubkey === project.author && (
+            <NewProjectModal
+              open={editOpen}
+              onClose={() => setEditOpen(false)}
+              editProject={project}
+              onSaved={(updated) => setProject((prev) => {
+                if (!prev) return prev;
+                const merged: CommunityProject = { ...prev, ...updated };
+                patchCachedCommunityProject(merged);
+                return merged;
+              })}
+            />
+          )}
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-3">
               <span className="text-[10px] font-mono tracking-widest text-foreground-subtle">
@@ -424,6 +505,55 @@ export default function NostrProjectPage({
           </div>
 
           <aside className="space-y-4">
+            {auth?.pubkey === project.author && (
+              <div className="rounded-2xl border border-border bg-background-card p-4 space-y-2">
+                <button
+                  onClick={() => setEditOpen(true)}
+                  className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-bitcoin/30 bg-bitcoin/5 hover:bg-bitcoin/10 text-bitcoin text-xs font-semibold transition-colors"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Editar proyecto
+                </button>
+                {archiveStep === "idle" && (
+                  <button
+                    onClick={() => setArchiveStep("confirm")}
+                    className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-border bg-white/[0.03] hover:bg-danger/10 hover:border-danger/40 hover:text-danger text-xs font-semibold transition-colors"
+                  >
+                    <Archive className="h-3.5 w-3.5" />
+                    Archivar
+                  </button>
+                )}
+                {archiveStep === "confirm" && (
+                  <div className="space-y-2">
+                    <p className="text-[11px] text-foreground-muted text-center">¿Archivar este proyecto?</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleArchive}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-danger/50 bg-danger/10 text-danger text-xs font-semibold transition-colors"
+                      >
+                        Confirmar
+                      </button>
+                      <button
+                        onClick={() => setArchiveStep("idle")}
+                        className="flex-1 px-3 py-2 rounded-lg text-xs font-semibold text-foreground-muted hover:text-foreground hover:bg-white/5 transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {archiveStep === "archiving" && (
+                  <button
+                    disabled
+                    className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-border text-xs font-semibold opacity-60"
+                  >
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Archivando…
+                  </button>
+                )}
+              </div>
+            )}
+
             {project.tech && project.tech.length > 0 && (
               <div className="hidden lg:block rounded-2xl border border-border bg-background-card p-5">
                 <div className="text-[10px] font-mono uppercase tracking-widest text-foreground-muted mb-3">

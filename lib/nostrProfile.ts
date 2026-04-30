@@ -179,7 +179,7 @@ export async function publishNostrProfile(
     kind: 0,
     pubkey: signer.pubkey,
     created_at: now,
-    tags: [["client", "La Crypta Labs"]],
+    tags: [["client", "La Crypta Dev"]],
     content: JSON.stringify(content),
   };
 
