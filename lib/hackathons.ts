@@ -84,7 +84,8 @@ export type ProjectStatus =
   | "submitted"
   | "finalist"
   | "winner"
-  | "official";
+  | "official"
+  | "archived";
 
 export type HackathonProject = {
   id: string;

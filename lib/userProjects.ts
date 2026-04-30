@@ -208,6 +208,7 @@ function parseProjectContent(
     "finalist",
     "winner",
     "official",
+    "archived",
   ];
   const rawStatus = asString(parsed.status);
   const status: ProjectStatus = allowedStatuses.includes(
@@ -314,7 +315,7 @@ export async function fetchUserProjects(
   const deduped = dedupeLatestByD(events);
   const projects = deduped
     .map(parseProjectContent)
-    .filter((p): p is UserProject => p !== null)
+    .filter((p): p is UserProject => p !== null && p.status !== "archived")
     .sort((a, b) => b.updatedAt - a.updatedAt);
 
   const doc: ProjectsDoc = { projects };
@@ -379,24 +380,6 @@ function buildProjectEvent(
   };
 }
 
-function buildTombstoneEvent(
-  projectId: string,
-  signerPubkey: string,
-): UnsignedEvent {
-  // Replaces the project event with an empty payload, effectively a delete.
-  return {
-    kind: PROJECT_KIND,
-    pubkey: signerPubkey,
-    created_at: Math.floor(Date.now() / 1000),
-    tags: [
-      ["d", projectDTag(projectId)],
-      // No `t:lacrypta-labs-project` so it stops showing up in community scans.
-      ["client", "La Crypta Labs"],
-      ["deleted", "true"],
-    ],
-    content: "",
-  };
-}
 
 async function publishSignedEvent(
   signed: SignedEvent,
@@ -484,9 +467,9 @@ export async function publishUserProject(
   return { signed, relays: relayResults };
 }
 
-export async function deleteUserProject(
+export async function archiveUserProject(
   signer: UserSigner,
-  projectId: string,
+  project: UserProject,
   relays: string[] = DEFAULT_USER_RELAYS,
   opts?: {
     signTimeoutMs?: number;
@@ -495,7 +478,8 @@ export async function deleteUserProject(
   },
 ): Promise<PublishProjectResult> {
   const { signTimeoutMs = 30_000, publishTimeoutMs = 8_000 } = opts ?? {};
-  const unsigned = buildTombstoneEvent(projectId, signer.pubkey);
+  const archived: UserProject = { ...project, status: "archived", updatedAt: Math.floor(Date.now() / 1000) };
+  const unsigned = buildProjectEvent(archived, signer.pubkey);
   const signed = await withTimeout(
     signer.signEvent(unsigned),
     signTimeoutMs,
@@ -510,7 +494,7 @@ export async function deleteUserProject(
   const ok = relayResults.some((r) => r.ok);
   if (!ok) {
     const err = new Error(
-      `Ningún relay aceptó la eliminación.\n${relayResults
+      `Ningún relay aceptó el archivo.\n${relayResults
         .map((r) => `${r.relay}: ${r.error ?? "sin respuesta"}`)
         .join("\n")}`,
     );
@@ -627,7 +611,7 @@ export async function fetchCommunityProjects(
       };
       return project;
     })
-    .filter((p): p is CommunityProject => p !== null)
+    .filter((p): p is CommunityProject => p !== null && p.status !== "archived")
     .sort((a, b) => b.eventCreatedAt - a.eventCreatedAt);
 
   setCachedCommunityProjects(projects);

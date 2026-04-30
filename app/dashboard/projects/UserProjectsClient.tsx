@@ -30,7 +30,7 @@ import { useScrollLock } from "@/lib/useScrollLock";
 import { getSigner } from "@/lib/nostrSigner";
 import {
   DEFAULT_USER_RELAYS,
-  deleteUserProject,
+  archiveUserProject,
   fetchUserProjects,
   getCachedUserProjects,
   publishUserProject,
@@ -428,14 +428,16 @@ export default function UserProjectsClient() {
   }
 
   async function removeProject(id: string) {
+    const project = doc?.projects.find((p) => p.id === id);
+    if (!project) return;
     const rl = relays;
     setPublishProgress({ relays: rl, results: [], phase: "signing" });
     try {
       const result = await runSignerOp(
-        "Proyecto eliminado",
-        "No se pudo eliminar el proyecto",
+        "Proyecto archivado",
+        "No se pudo archivar el proyecto",
         (signer) =>
-          deleteUserProject(signer, id, rl, {
+          archiveUserProject(signer, project, rl, {
             onRelayResult: (r) =>
               setPublishProgress((prev) =>
                 prev
@@ -2043,11 +2045,11 @@ function ConfirmDelete({
               <Trash2 className="h-5 w-5 text-danger" />
             </div>
             <h3 className="font-display font-bold text-lg mb-1">
-              ¿Borrar proyecto?
+              ¿Archivar proyecto?
             </h3>
             <p className="text-sm text-foreground-muted mb-5">
-              Esto reemplaza el evento en los relays. Podés volver a crearlo
-              después.
+              El proyecto queda archivado en los relays y deja de aparecer en
+              los listados.
             </p>
             <div className="flex gap-3">
               <button
@@ -2065,12 +2067,12 @@ function ConfirmDelete({
                 {publishing ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Borrando…
+                    Archivando…
                   </>
                 ) : (
                   <>
                     <Check className="h-4 w-4" />
-                    Borrar
+                    Archivar
                   </>
                 )}
               </button>

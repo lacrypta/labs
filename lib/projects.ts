@@ -5,7 +5,8 @@ export type ProjectStatus =
   | "finalist"
   | "submitted"
   | "building"
-  | "idea";
+  | "idea"
+  | "archived";
 
 export type ProjectHackathon = "foundations" | "identity" | null;
 
