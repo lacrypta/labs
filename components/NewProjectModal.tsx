@@ -9,6 +9,7 @@ import {
   X,
   BadgeCheck,
   AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { NIP05_REGEX, queryProfile } from "nostr-tools/nip05";
 import { useToast } from "@/components/Toast";
@@ -60,6 +61,155 @@ const STACK_SUGGESTIONS = [
   "IPFS","PostgreSQL","SQLite","Redis","Supabase","Vercel","Fly.io","Cloudflare Workers",
 ];
 
+function parseReadmeDescription(md: string): string {
+  const lines = md.split("\n");
+  const titleIdx = lines.findIndex(l => /^#\s/.test(l) || /<h1[\s>]/i.test(l));
+  if (titleIdx === -1) return "";
+  const body: string[] = [];
+  for (let i = titleIdx + 1; i < lines.length; i++) {
+    if (/^#{2,}\s/.test(lines[i]) || /^---+\s*$/.test(lines[i])) break;
+    body.push(lines[i]);
+  }
+  const descParts: string[] = [];
+  for (const para of body.join("\n").split(/\n{2,}/).map(p => p.trim()).filter(Boolean)) {
+    if (/^\*\*[^*\n]+\*\*$/.test(para)) continue; // single-line all-bold tagline
+    if (/^>\s*\*?\*?(?:⚠|pre-?alpha|wip|warning|note|caution|deprecated)/i.test(para)) continue; // warning blockquote
+    if (/^!?\[/.test(para)) continue; // badge / image
+    if (/^<[a-z]/i.test(para)) continue; // HTML element
+    const text = para
+      .replace(/<[^>]+>/g, "")
+      .replace(/!?\[(?:[^\]]*)\]\([^)]*\)/g, "")
+      .replace(/^>\s*/gm, "")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/\*([^*]+)\*/g, "$1")
+      .replace(/&[a-zA-Z0-9]+;/g, " ")
+      .replace(/\n/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text.length > 20) {
+      descParts.push(text);
+      if (descParts.length >= 2) break;
+    }
+  }
+  return descParts.join(" ").slice(0, 500).trim();
+}
+
+function parseReadmeTech(md: string): string[] {
+  const sectionRe = /^#{2,3}\s[^\n]*(?:stack|tecnolog[íi]|herramientas?)[^\n]*/im;
+  const match = md.match(sectionRe);
+  const items: string[] = [];
+
+  if (match?.index !== undefined) {
+    const after = md.slice(match.index + match[0].length);
+    const nextHeading = after.search(/^#{2,3}\s/m);
+    const section = nextHeading === -1 ? after : after.slice(0, nextHeading);
+
+    const bulletRe = /^[-*+]\s+(.+)$/gm;
+    let m: RegExpExecArray | null;
+    while ((m = bulletRe.exec(section)) !== null) {
+      const raw = m[1].trim();
+      // Bold prefix is the tech name: **TypeScript** [v5.0+](url) — desc
+      const boldMatch = raw.match(/^\*\*([^*]+)\*\*/);
+      if (boldMatch) {
+        const name = boldMatch[1].trim();
+        if (name.length > 1 && name.length < 40) items.push(name);
+        continue;
+      }
+      // Leading markdown link: [Radix UI](url) — desc
+      const linkMatch = raw.match(/^\[([^\]]+)\]\([^)]+\)/);
+      if (linkMatch) {
+        const name = linkMatch[1].trim();
+        if (name.length > 1 && name.length < 40) items.push(name);
+        continue;
+      }
+      for (const part of raw.split(/\s*\+\s*/)) {
+        const item = part
+          .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+          .replace(/\s*\([^)]+\)/g, "")
+          .replace(/<[^>]+>/g, "")
+          .replace(/[`*]/g, "")
+          .split(/\s+[—–-]\s+/)[0]
+          .trim();
+        if (item.length > 1 && item.length < 40) items.push(item);
+      }
+    }
+
+    if (items.length === 0) {
+      const tableRe = /^\|[^|\n]+\|([^|\n]+)\|/gm;
+      while ((m = tableRe.exec(section)) !== null) {
+        const cell = m[1].trim().replace(/\*\*/g, "");
+        if (/^[-:\s]+$/.test(cell)) continue;
+        if (/^(?:technology|tecnolog[íi]a|herramienta|tool|layer|capa|component)s?$/i.test(cell)) continue;
+        for (const part of cell.split(/\s*[,+]\s*/)) {
+          const item = part
+            .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+            .replace(/\s*\([^)]+\)/g, "")
+            .replace(/<[^>]+>/g, "")
+            .replace(/[`*]/g, "")
+            .split(/\s+[—–-]\s+/)[0]
+            .trim();
+          if (item.length > 1 && item.length < 40) items.push(item);
+        }
+      }
+    }
+  }
+
+  if (items.length === 0) {
+    const inlineMatch = md.match(/\*\*(?:tech\s+)?stack[^*]*\*\*\s*:?\s*(.+)/i);
+    if (inlineMatch) {
+      for (const part of inlineMatch[1].split(/\s*[·•,+/]\s*/)) {
+        const item = part
+          .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+          .replace(/\s*\([^)]+\)/g, "")
+          .replace(/[`*]/g, "")
+          .split(/\s+[—–-]\s+/)[0]
+          .trim();
+        if (item.length > 1 && item.length < 40) items.push(item);
+      }
+    }
+  }
+
+  // Filter out version strings, bracket artifacts, and prose fragments
+  const validated = items.filter(item =>
+    !/^v?\d/.test(item) && !/^[—–\[]/.test(item) && item.split(/\s+/).length <= 4
+  );
+
+  return [...new Set(validated)].slice(0, 8);
+}
+
+async function fetchGitHubMeta(repoUrl: string): Promise<{
+  name: string;
+  description: string | null;
+  language: string | null;
+  topics: string[];
+  homepage: string | null;
+  readmeDescription: string;
+  readmeTech: string[];
+}> {
+  const m = repoUrl.match(/github\.com\/([^/]+?)\/([^/?#]+?)(?:\.git)?\/?(?:[?#].*)?$/);
+  if (!m) throw new Error("URL de GitHub inválida");
+  const [, owner, repo] = m;
+  const [apiRes, readmeRes] = await Promise.allSettled([
+    fetch(`https://api.github.com/repos/${owner}/${repo}`).then(r => {
+      if (!r.ok) throw new Error(r.status === 404 ? "Repo no encontrado" : "Error al acceder a GitHub");
+      return r.json();
+    }),
+    fetch(`https://raw.githubusercontent.com/${owner}/${repo}/HEAD/README.md`).then(r => r.ok ? r.text() : null),
+  ]);
+  if (apiRes.status === "rejected") throw apiRes.reason;
+  const api = apiRes.value;
+  const readme = readmeRes.status === "fulfilled" ? readmeRes.value : null;
+  return {
+    name: api.name,
+    description: api.description,
+    language: api.language,
+    topics: api.topics ?? [],
+    homepage: api.homepage,
+    readmeDescription: readme ? parseReadmeDescription(readme) : "",
+    readmeTech: readme ? parseReadmeTech(readme) : [],
+  };
+}
+
 export default function NewProjectModal({
   hackathonId,
   open,
@@ -76,6 +226,8 @@ export default function NewProjectModal({
   const [form, setForm] = useState<FormState>({
     name: "", description: "", demo: "", repo: "", tech: [], team: [], hackathon: hackathonId ?? "",
   });
+  const [step, setStep] = useState<"repo" | "fetching" | "form">("repo");
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [phase, setPhase] = useState<Phase | null>(null);
   const [phaseDetail, setPhaseDetail] = useState<string | null>(null);
@@ -101,6 +253,8 @@ export default function NewProjectModal({
     if (open) {
       setForm({ name: "", description: "", demo: "", repo: "", tech: [], team: [ownerRow()], hackathon: hackathonId ?? "" });
       setError(null);
+      setStep("repo");
+      setFetchError(null);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -201,6 +355,27 @@ export default function NewProjectModal({
     : phase === "done" ? `Publicado ${phaseDetail ?? ""}`
     : "Procesando…";
 
+  async function handleFetch() {
+    setFetchError(null);
+    setStep("fetching");
+    try {
+      const meta = await fetchGitHubMeta(form.repo.trim());
+      setForm((f) => ({
+        ...f,
+        name: meta.name.replace(/-/g, " "),
+        description: meta.readmeDescription || meta.description || "",
+        demo: meta.homepage ?? "",
+        tech: meta.readmeTech.length > 0
+          ? meta.readmeTech
+          : [...(meta.language ? [meta.language] : []), ...(meta.topics ?? [])].slice(0, 8),
+      }));
+      setStep("form");
+    } catch (e) {
+      setFetchError(e instanceof Error ? e.message : "Error al obtener datos");
+      setStep("repo");
+    }
+  }
+
   return (
     <AnimatePresence>
       {open && (
@@ -214,7 +389,7 @@ export default function NewProjectModal({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={() => !publishing && onClose()}
+            onClick={() => !publishing && step !== "fetching" && onClose()}
             className="absolute inset-0 bg-black/80 backdrop-blur-md"
           />
           <motion.form
@@ -223,7 +398,11 @@ export default function NewProjectModal({
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
             className="relative w-full max-w-lg glass-strong rounded-2xl border border-border-strong overflow-hidden"
-            onSubmit={(e) => { e.preventDefault(); handleSave(); }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (step === "repo") handleFetch();
+              else if (step === "form") handleSave();
+            }}
           >
             <div className="absolute -top-px left-1/2 -translate-x-1/2 w-[40%] h-px bg-gradient-to-r from-transparent via-bitcoin to-transparent" />
 
@@ -234,119 +413,196 @@ export default function NewProjectModal({
                   Se firma con tu clave y se publica en los relays.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => !publishing && onClose()}
-                disabled={publishing}
-                className="p-2 rounded-lg text-foreground-muted hover:text-foreground hover:bg-white/5 transition-colors disabled:opacity-50"
-                aria-label="Cerrar"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-3">
+                {step !== "fetching" && (
+                  <span className="text-[10px] font-mono text-foreground-subtle">
+                    {step === "repo" ? "1" : "2"} / 2
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => !publishing && step !== "fetching" && onClose()}
+                  disabled={publishing || step === "fetching"}
+                  className="p-2 rounded-lg text-foreground-muted hover:text-foreground hover:bg-white/5 transition-colors disabled:opacity-50"
+                  aria-label="Cerrar"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
-            <div className="relative px-6 py-5 space-y-4 max-h-[60vh] overflow-y-auto">
-              {error && (
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-danger/10 border border-danger/30 text-sm text-danger">
-                  <X className="h-4 w-4 shrink-0" />
-                  {error}
-                </div>
-              )}
-              <Field label="Nombre" required>
-                <input
-                  type="text"
-                  autoFocus
-                  required
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  disabled={publishing}
-                  placeholder="Mi proyecto genial"
-                  className="w-full px-3 py-2.5 rounded-lg bg-white/[0.03] border border-border focus:border-bitcoin/50 focus:bg-white/[0.05] transition-colors text-sm placeholder:text-foreground-subtle"
-                />
-              </Field>
-              <Field label="Descripción">
-                <textarea
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  disabled={publishing}
-                  rows={3}
-                  placeholder="¿Qué hace? ¿Para quién?"
-                  className="w-full px-3 py-2.5 rounded-lg bg-white/[0.03] border border-border focus:border-bitcoin/50 focus:bg-white/[0.05] transition-colors text-sm placeholder:text-foreground-subtle resize-none"
-                />
-              </Field>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label="Repositorio">
+            {step === "fetching" ? (
+              <div className="relative px-6 py-16 flex flex-col items-center justify-center gap-3">
+                <Loader2 className="h-8 w-8 animate-spin text-bitcoin" />
+                <p className="text-sm text-foreground-muted">Cargando datos del repo…</p>
+              </div>
+            ) : step === "repo" ? (
+              <div className="relative px-6 py-5 space-y-4">
+                <p className="text-sm text-foreground-muted">
+                  Ingresá la URL del repositorio en GitHub para autocompletar nombre, descripción y stack.
+                </p>
+                {fetchError && (
+                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-danger/10 border border-danger/30 text-sm text-danger">
+                    <X className="h-4 w-4 shrink-0" />
+                    {fetchError}
+                  </div>
+                )}
+                <Field label="Repositorio de GitHub">
                   <input
                     type="url"
+                    autoFocus
                     value={form.repo}
                     onChange={(e) => setForm({ ...form, repo: e.target.value })}
-                    disabled={publishing}
-                    placeholder="https://github.com/..."
-                    className="w-full px-3 py-2.5 rounded-lg bg-white/[0.03] border border-border focus:border-bitcoin/50 focus:bg-white/[0.05] transition-colors text-sm font-mono placeholder:text-foreground-subtle"
-                  />
-                </Field>
-                <Field label="Demo / Sitio">
-                  <input
-                    type="url"
-                    value={form.demo}
-                    onChange={(e) => setForm({ ...form, demo: e.target.value })}
-                    disabled={publishing}
-                    placeholder="https://..."
+                    placeholder="https://github.com/owner/repo"
                     className="w-full px-3 py-2.5 rounded-lg bg-white/[0.03] border border-border focus:border-bitcoin/50 focus:bg-white/[0.05] transition-colors text-sm font-mono placeholder:text-foreground-subtle"
                   />
                 </Field>
               </div>
-              <Field label="Stack" hint="enter o coma para sumar">
-                <TagsInput
-                  value={form.tech}
-                  onChange={(tech) => setForm({ ...form, tech })}
+            ) : (
+              <div className="relative px-6 py-5 space-y-4 max-h-[60vh] overflow-y-auto">
+                {error && (
+                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-danger/10 border border-danger/30 text-sm text-danger">
+                    <X className="h-4 w-4 shrink-0" />
+                    {error}
+                  </div>
+                )}
+                <Field label="Nombre" required>
+                  <input
+                    type="text"
+                    autoFocus
+                    required
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    disabled={publishing}
+                    placeholder="Mi proyecto genial"
+                    className="w-full px-3 py-2.5 rounded-lg bg-white/[0.03] border border-border focus:border-bitcoin/50 focus:bg-white/[0.05] transition-colors text-sm placeholder:text-foreground-subtle"
+                  />
+                </Field>
+                <Field label="Descripción">
+                  <textarea
+                    value={form.description}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    disabled={publishing}
+                    rows={3}
+                    placeholder="¿Qué hace? ¿Para quién?"
+                    className="w-full px-3 py-2.5 rounded-lg bg-white/[0.03] border border-border focus:border-bitcoin/50 focus:bg-white/[0.05] transition-colors text-sm placeholder:text-foreground-subtle resize-none"
+                  />
+                </Field>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Field
+                    label="Repositorio"
+                    action={
+                      <button
+                        type="button"
+                        onClick={handleFetch}
+                        disabled={publishing || !form.repo.trim()}
+                        title="Recargar desde GitHub"
+                        className="p-0.5 rounded text-foreground-subtle hover:text-bitcoin disabled:opacity-40 transition-colors"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                      </button>
+                    }
+                  >
+                    <input
+                      type="url"
+                      value={form.repo}
+                      onChange={(e) => setForm({ ...form, repo: e.target.value })}
+                      disabled={publishing}
+                      placeholder="https://github.com/..."
+                      className="w-full px-3 py-2.5 rounded-lg bg-white/[0.03] border border-border focus:border-bitcoin/50 focus:bg-white/[0.05] transition-colors text-sm font-mono placeholder:text-foreground-subtle"
+                    />
+                  </Field>
+                  <Field label="Demo / Sitio">
+                    <input
+                      type="url"
+                      value={form.demo}
+                      onChange={(e) => setForm({ ...form, demo: e.target.value })}
+                      disabled={publishing}
+                      placeholder="https://..."
+                      className="w-full px-3 py-2.5 rounded-lg bg-white/[0.03] border border-border focus:border-bitcoin/50 focus:bg-white/[0.05] transition-colors text-sm font-mono placeholder:text-foreground-subtle"
+                    />
+                  </Field>
+                </div>
+                <Field label="Stack" hint="enter o coma para sumar">
+                  <TagsInput
+                    value={form.tech}
+                    onChange={(tech) => setForm({ ...form, tech })}
+                    disabled={publishing}
+                    placeholder="Lightning, Nostr, NIP-01…"
+                    suggestions={STACK_SUGGESTIONS}
+                  />
+                </Field>
+                <Field label="Hackatón" hint={hackathonId ? undefined : "asignalo para que aparezca en /hackathons"}>
+                  <select
+                    value={form.hackathon}
+                    onChange={(e) => setForm({ ...form, hackathon: e.target.value })}
+                    disabled={publishing || !!hackathonId}
+                    className={cn("w-full px-3 py-2.5 rounded-lg bg-white/[0.03] border border-border focus:border-bitcoin/50 focus:bg-white/[0.05] transition-colors text-sm", hackathonId && "opacity-60 cursor-not-allowed")}
+                  >
+                    <option value="">Sin hackatón asignado</option>
+                    {HACKATHONS.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.icon} {h.name} · {h.monthShort} {h.year}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <TeamEditor
+                  team={form.team}
+                  onChange={(team) => setForm({ ...form, team })}
                   disabled={publishing}
-                  placeholder="Lightning, Nostr, NIP-01…"
-                  suggestions={STACK_SUGGESTIONS}
                 />
-              </Field>
-              <Field label="Hackatón" hint={hackathonId ? undefined : "asignalo para que aparezca en /hackathons"}>
-                <select
-                  value={form.hackathon}
-                  onChange={(e) => setForm({ ...form, hackathon: e.target.value })}
-                  disabled={publishing || !!hackathonId}
-                  className={cn("w-full px-3 py-2.5 rounded-lg bg-white/[0.03] border border-border focus:border-bitcoin/50 focus:bg-white/[0.05] transition-colors text-sm", hackathonId && "opacity-60 cursor-not-allowed")}
+                <button
+                  type="button"
+                  onClick={() => { setStep("repo"); setFetchError(null); }}
+                  className="text-[11px] text-foreground-subtle hover:text-foreground-muted transition-colors"
                 >
-                  <option value="">Sin hackatón asignado</option>
-                  {HACKATHONS.map((h) => (
-                    <option key={h.id} value={h.id}>
-                      {h.icon} {h.name} · {h.monthShort} {h.year}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <TeamEditor
-                team={form.team}
-                onChange={(team) => setForm({ ...form, team })}
-                disabled={publishing}
-              />
-            </div>
+                  ← Cambiar repositorio
+                </button>
+              </div>
+            )}
 
             <div className="relative px-6 py-4 bg-black/30 border-t border-border flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={publishing}
-                className="px-4 py-2 rounded-lg text-sm font-semibold text-foreground-muted hover:text-foreground hover:bg-white/5 transition-colors disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={publishing || !form.name.trim()}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-bitcoin to-yellow-500 text-black disabled:opacity-70 disabled:cursor-progress"
-              >
-                {publishing ? (
-                  <><Loader2 className="h-4 w-4 animate-spin" />{phaseLabel}</>
-                ) : (
-                  <><Save className="h-4 w-4" />Crear</>
-                )}
-              </button>
+              {step === "fetching" ? null : step === "repo" ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-4 py-2 rounded-lg text-sm font-semibold text-foreground-muted hover:text-foreground hover:bg-white/5 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!form.repo.trim()}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-bitcoin to-yellow-500 text-black disabled:opacity-50"
+                  >
+                    Siguiente →
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    disabled={publishing}
+                    className="px-4 py-2 rounded-lg text-sm font-semibold text-foreground-muted hover:text-foreground hover:bg-white/5 transition-colors disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={publishing || !form.name.trim()}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-bitcoin to-yellow-500 text-black disabled:opacity-70 disabled:cursor-progress"
+                  >
+                    {publishing ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" />{phaseLabel}</>
+                    ) : (
+                      <><Save className="h-4 w-4" />Crear</>
+                    )}
+                  </button>
+                </>
+              )}
             </div>
           </motion.form>
         </motion.div>
@@ -357,12 +613,15 @@ export default function NewProjectModal({
 
 /* ──────────────────────────────────── Field ──────────────────────────────────── */
 
-function Field({ label, hint, required, children }: { label: string; hint?: string; required?: boolean; children: React.ReactNode }) {
+function Field({ label, hint, required, action, children }: { label: string; hint?: string; required?: boolean; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <label className="block">
       <span className="flex items-center justify-between text-xs font-medium text-foreground-muted mb-1.5">
         <span>{label}{required && <span className="text-danger ml-0.5">*</span>}</span>
-        {hint && <span className="text-[10px] text-foreground-subtle">{hint}</span>}
+        <span className="flex items-center gap-1.5">
+          {hint && <span className="text-[10px] text-foreground-subtle">{hint}</span>}
+          {action}
+        </span>
       </span>
       {children}
     </label>
