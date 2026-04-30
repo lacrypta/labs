@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   ArrowLeft,
   ExternalLink,
+  Loader2,
   Users,
   Zap,
   CircleDashed,
@@ -85,10 +86,71 @@ export default function NostrProjectPage({
             <ArrowLeft className="h-3.5 w-3.5" />
             {hackathon?.name ?? "Hackatones"}
           </Link>
-          <div className="animate-pulse space-y-4 mt-8">
-            <div className="h-8 bg-white/5 rounded-lg w-64" />
-            <div className="h-4 bg-white/5 rounded w-full max-w-lg" />
-            <div className="h-4 bg-white/5 rounded w-3/4 max-w-md" />
+
+          {/* relay fetch indicator */}
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-nostr/10 border border-nostr/20 mb-8">
+            <Loader2 className="h-3 w-3 animate-spin text-nostr" />
+            <span className="text-[10px] font-mono text-nostr">obteniendo desde los relays…</span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-8 animate-pulse">
+            {/* main column */}
+            <div className="min-w-0 space-y-6">
+              {/* badges */}
+              <div className="flex items-center gap-2">
+                <div className="h-4 w-28 rounded-full bg-white/5" />
+                <div className="h-4 w-16 rounded-full bg-white/5" />
+                <div className="h-4 w-14 rounded-full bg-nostr/10" />
+              </div>
+              {/* title */}
+              <div className="space-y-2">
+                <div className="h-10 w-3/4 rounded-lg bg-white/5" />
+                <div className="h-10 w-1/2 rounded-lg bg-white/5" />
+              </div>
+              {/* description */}
+              <div className="space-y-2">
+                <div className="h-4 w-full rounded bg-white/5" />
+                <div className="h-4 w-[92%] rounded bg-white/5" />
+                <div className="h-4 w-4/5 rounded bg-white/5" />
+              </div>
+              {/* action buttons */}
+              <div className="flex gap-2">
+                <div className="h-8 w-20 rounded-lg bg-white/5" />
+                <div className="h-8 w-20 rounded-lg bg-white/5" />
+              </div>
+              {/* nostr signature box */}
+              <div className="rounded-xl border border-nostr/10 bg-nostr/5 p-4 space-y-2">
+                <div className="h-3 w-36 rounded bg-nostr/10" />
+                <div className="h-3 w-full rounded bg-white/5" />
+                <div className="h-3 w-5/6 rounded bg-white/5" />
+              </div>
+            </div>
+
+            {/* sidebar */}
+            <aside className="space-y-4">
+              {/* stack card */}
+              <div className="rounded-2xl border border-border bg-background-card p-5 space-y-3">
+                <div className="h-3 w-10 rounded bg-white/5" />
+                <div className="flex flex-wrap gap-1.5">
+                  {[44, 60, 52, 36, 56].map((w) => (
+                    <div key={w} className="h-5 rounded-md bg-white/5" style={{ width: w }} />
+                  ))}
+                </div>
+              </div>
+              {/* team card */}
+              <div className="rounded-2xl border border-border bg-background-card p-5 space-y-4">
+                <div className="h-3 w-14 rounded bg-white/5" />
+                {[1, 2].map((i) => (
+                  <div key={i} className="flex items-center gap-2.5">
+                    <div className="h-8 w-8 rounded-full bg-white/5 shrink-0" />
+                    <div className="flex-1 space-y-1.5">
+                      <div className="h-3 w-24 rounded bg-white/5" />
+                      <div className="h-2.5 w-14 rounded bg-white/5" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </aside>
           </div>
         </div>
       </div>
