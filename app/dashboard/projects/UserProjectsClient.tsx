@@ -1149,10 +1149,11 @@ function RelayPublishProgress({
             {relays.map((relay) => {
               const result = results.find((r) => r.relay === relay);
               const name = relay.replace("wss://", "").split("/")[0];
+              const errMsg = result?.error?.replace(/^connection failure:\s*/i, "").replace(/^Error:\s*/i, "");
               return (
-                <div key={relay} className="flex items-center gap-2">
+                <div key={relay} className="flex items-start gap-2">
                   <motion.div
-                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    className="w-1.5 h-1.5 rounded-full shrink-0 mt-[3px]"
                     animate={{
                       backgroundColor: !result
                         ? "rgba(255,255,255,0.15)"
@@ -1163,18 +1164,23 @@ function RelayPublishProgress({
                     }}
                     transition={{ duration: 0.25 }}
                   />
-                  <span
-                    className={cn(
-                      "text-[10px] font-mono flex-1 truncate transition-colors duration-300",
-                      !result
-                        ? "text-foreground-subtle"
-                        : result.ok
-                        ? "text-foreground"
-                        : "text-danger",
+                  <div className="flex-1 min-w-0">
+                    <div
+                      className={cn(
+                        "text-[10px] font-mono truncate transition-colors duration-300",
+                        !result
+                          ? "text-foreground-subtle"
+                          : result.ok
+                          ? "text-foreground"
+                          : "text-danger",
+                      )}
+                    >
+                      {name}
+                    </div>
+                    {result && !result.ok && errMsg && (
+                      <div className="text-[9px] text-danger/60 truncate">{errMsg}</div>
                     )}
-                  >
-                    {name}
-                  </span>
+                  </div>
                   <AnimatePresence>
                     {result && (
                       <motion.span

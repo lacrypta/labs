@@ -406,6 +406,7 @@ async function publishSignedEvent(
 ): Promise<PublishProjectResult["relays"]> {
   const { SimplePool } = await import("nostr-tools/pool");
   const pool = new SimplePool();
+  console.log("[labs:publish] signing id:", signed.id, "kind:", signed.kind, "relays:", relays);
   const promises = pool.publish(relays, signed);
   const results = await Promise.all(
     promises.map(async (p, i) => {
@@ -413,18 +414,20 @@ async function publishSignedEvent(
       try {
         const resolved = await withTimeout(p, perRelayTimeoutMs, relay);
         // nostr-tools resolves (not rejects) on connection failure with "connection failure: ..."
-        if (typeof resolved === "string" && resolved.startsWith("connection failure:")) {
-          throw new Error(resolved);
+        if (
+          resolved === undefined ||
+          (typeof resolved === "string" && resolved.startsWith("connection failure:"))
+        ) {
+          throw new Error(typeof resolved === "string" ? resolved : "relay rechazó o no respondió");
         }
+        console.log(`[labs:publish] ✓ ${relay}: ok (reason: ${JSON.stringify(resolved)})`);
         const r = { relay, ok: true as const };
         onRelayResult?.(r);
         return r;
       } catch (e) {
-        const r = {
-          relay,
-          ok: false as const,
-          error: e instanceof Error ? e.message : String(e),
-        };
+        const error = e instanceof Error ? e.message : String(e);
+        console.warn(`[labs:publish] ✗ ${relay}:`, error);
+        const r = { relay, ok: false as const, error };
         onRelayResult?.(r);
         return r;
       }
