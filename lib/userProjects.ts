@@ -411,7 +411,11 @@ async function publishSignedEvent(
     promises.map(async (p, i) => {
       const relay = relays[i];
       try {
-        await withTimeout(p, perRelayTimeoutMs, relay);
+        const resolved = await withTimeout(p, perRelayTimeoutMs, relay);
+        // nostr-tools resolves (not rejects) on connection failure with "connection failure: ..."
+        if (typeof resolved === "string" && resolved.startsWith("connection failure:")) {
+          throw new Error(resolved);
+        }
         const r = { relay, ok: true as const };
         onRelayResult?.(r);
         return r;

@@ -10,6 +10,7 @@ import {
   BadgeCheck,
   AlertCircle,
   RefreshCw,
+  Check,
 } from "lucide-react";
 import { NIP05_REGEX, queryProfile } from "nostr-tools/nip05";
 import { useToast } from "@/components/Toast";
@@ -232,6 +233,7 @@ export default function NewProjectModal({
   const [phase, setPhase] = useState<Phase | null>(null);
   const [phaseDetail, setPhaseDetail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [relayResults, setRelayResults] = useState<{ relay: string; ok: boolean; error?: string }[]>([]);
 
   const relays = useMemo(() => {
     const out = new Set<string>(DEFAULT_USER_RELAYS);
@@ -320,6 +322,7 @@ export default function NewProjectModal({
     setPublishing(true);
     setPhase("signing");
     setPhaseDetail(null);
+    setRelayResults([]);
 
     let signer: Awaited<ReturnType<typeof getSigner>> | null = null;
     try {
@@ -331,12 +334,14 @@ export default function NewProjectModal({
       });
       setPhase("publishing");
       setPhaseDetail(`${relays.length} relays`);
-      const result = await publishUserProject(signer, project, relays);
+      const result = await publishUserProject(signer, project, relays, {
+        onRelayResult: (r) => setRelayResults((prev) => [...prev, r]),
+      });
       const okCount = result.relays.filter((r) => r.ok).length;
       setPhase("done");
       setPhaseDetail(`${okCount}/${result.relays.length} relays`);
       pushToast({ kind: "success", title: "Proyecto creado", description: `Publicado en ${okCount}/${result.relays.length} relays.` });
-      onClose();
+      setTimeout(() => onClose(), 1800);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
@@ -344,15 +349,14 @@ export default function NewProjectModal({
     } finally {
       signer?.close?.().catch(() => {});
       setPublishing(false);
-      setPhase(null);
-      setPhaseDetail(null);
+      setTimeout(() => { setPhase(null); setPhaseDetail(null); setRelayResults([]); }, 2000);
     }
   }
 
   const phaseLabel =
     phase === "signing" ? "Esperando firma…"
-    : phase === "publishing" ? `Publicando${phaseDetail ? ` en ${phaseDetail}` : "…"}`
-    : phase === "done" ? `Publicado ${phaseDetail ?? ""}`
+    : phase === "publishing" ? "Publicando…"
+    : phase === "done" ? "Publicado"
     : "Procesando…";
 
   async function handleFetch() {
@@ -377,6 +381,7 @@ export default function NewProjectModal({
   }
 
   return (
+    <>
     <AnimatePresence>
       {open && (
         <motion.div
@@ -608,6 +613,106 @@ export default function NewProjectModal({
         </motion.div>
       )}
     </AnimatePresence>
+    <AnimatePresence>
+      {phase && (
+        <RelayPublishProgress relays={relays} results={relayResults} phase={phase} />
+      )}
+    </AnimatePresence>
+    </>
+  );
+}
+
+/* ──────────────────────────────── RelayPublishProgress ──────────────────────── */
+
+function RelayPublishProgress({
+  relays,
+  results,
+  phase,
+}: {
+  relays: string[];
+  results: { relay: string; ok: boolean; error?: string }[];
+  phase: "signing" | "publishing" | "done";
+}) {
+  const done = results.length;
+  const total = relays.length;
+  const progress = total > 0 ? done / total : 0;
+  const hasError = results.some((r) => !r.ok);
+  const radius = 18;
+  const circumference = 2 * Math.PI * radius;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 10, scale: 0.92 }}
+      transition={{ duration: 0.22, ease: "easeOut" }}
+      className="fixed bottom-6 right-6 z-[200] glass-strong border border-border-strong rounded-2xl p-4 shadow-2xl shadow-black/40 w-72"
+    >
+      <div className="flex items-start gap-3.5">
+        <div className="relative w-12 h-12 shrink-0">
+          <svg viewBox="0 0 44 44" className="w-12 h-12 -rotate-90">
+            <circle cx="22" cy="22" r={radius} fill="none" strokeWidth="3.5" className="stroke-white/10" />
+            <motion.circle
+              cx="22" cy="22" r={radius}
+              fill="none" strokeWidth="3.5" strokeLinecap="round"
+              strokeDasharray={circumference}
+              className={hasError ? "stroke-danger" : "stroke-bitcoin"}
+              animate={{ strokeDashoffset: circumference * (1 - progress) }}
+              initial={{ strokeDashoffset: circumference }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
+            />
+          </svg>
+          <div className="absolute inset-0 flex items-center justify-center">
+            {phase === "signing" ? (
+              <Loader2 className="h-4 w-4 animate-spin text-foreground-muted" />
+            ) : phase === "done" && !hasError ? (
+              <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
+                transition={{ type: "spring", stiffness: 320, damping: 14 }}>
+                <Check className="h-4 w-4 text-bitcoin" />
+              </motion.div>
+            ) : (
+              <span className="text-[11px] font-mono font-bold text-foreground">{done}/{total}</span>
+            )}
+          </div>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-foreground mb-2.5">
+            {phase === "signing" ? "Firmando…" : phase === "done" ? (hasError ? `${done}/${total} relays` : "Publicado") : "Publicando…"}
+          </div>
+          <div className="space-y-1.5">
+            {relays.map((relay) => {
+              const result = results.find((r) => r.relay === relay);
+              const name = relay.replace("wss://", "").split("/")[0];
+              return (
+                <div key={relay} className="flex items-center gap-2">
+                  <motion.div
+                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                    animate={{
+                      backgroundColor: !result ? "rgba(255,255,255,0.15)" : result.ok ? "#f7931a" : "#ef4444",
+                      scale: result ? [1, 1.5, 1] : 1,
+                    }}
+                    transition={{ duration: 0.25 }}
+                  />
+                  <span className={cn("text-[10px] font-mono flex-1 truncate transition-colors duration-300",
+                    !result ? "text-foreground-subtle" : result.ok ? "text-foreground" : "text-danger")}>
+                    {name}
+                  </span>
+                  <AnimatePresence>
+                    {result && (
+                      <motion.span initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className={cn("text-[10px] font-mono shrink-0", result.ok ? "text-bitcoin" : "text-danger")}>
+                        {result.ok ? "✓" : "✗"}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </motion.div>
   );
 }
 
