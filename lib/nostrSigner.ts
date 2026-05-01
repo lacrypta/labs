@@ -116,6 +116,7 @@ export async function getSigner(
       bunker: auth.bunker?.pubkey?.slice(0, 10) + "…",
       relays: auth.bunker?.relays,
       hasClientSecret: !!auth.clientSecret?.length,
+      encryption: auth.bunker?.encryption ?? "(legacy nip44)",
     });
     if (!auth.bunker?.pubkey || !auth.clientSecret?.length) {
       throw new Error(
@@ -128,10 +129,68 @@ export async function getSigner(
       );
     }
 
+    const clientSecret = Uint8Array.from(auth.clientSecret);
+
+    // QR-originated sessions persist their detected transport encryption.
+    // Use the dual-encryption client so Amber-on-NIP-04 stays reachable
+    // across reloads. Legacy paste-flow sessions (no `encryption` field)
+    // keep using nostr-tools' BunkerSigner, which is NIP-44 only.
+    if (auth.bunker.encryption) {
+      const { Nip46Client } = await import("./nip46Client");
+      const client = await Nip46Client.fromStored({
+        clientSecret,
+        bunkerPubkey: auth.bunker.pubkey,
+        relays: auth.bunker.relays,
+        secret: auth.bunker.secret ?? null,
+        encryption: auth.bunker.encryption,
+        onAuthUrl: (url: string) => {
+          console.log("[labs:signer] bunker requested auth_url", url);
+          opts.onAuthUrl?.(url);
+        },
+      });
+
+      let connectPromise: Promise<void> | null = null;
+      const ensureConnected = () => {
+        if (!connectPromise) {
+          connectPromise = Promise.race([
+            client.connect().then(
+              () => console.log("[labs:signer] bunker connect OK"),
+              (e) => console.warn("[labs:signer] bunker connect failed", e),
+            ),
+            new Promise<void>((r) => setTimeout(r, 5000)),
+          ]).then(() => {});
+        }
+        return connectPromise;
+      };
+      ensureConnected();
+
+      return {
+        pubkey: auth.pubkey,
+        async signEvent(event) {
+          console.log("[labs:signer] asking bunker to sign");
+          await ensureConnected();
+          const signed = await client.signEvent(event);
+          console.log("[labs:signer] bunker signed", {
+            id: signed.id?.slice(0, 12),
+          });
+          return signed;
+        },
+        async close() {
+          try {
+            await Promise.race([
+              client.close(),
+              new Promise((r) => setTimeout(r, 1000)),
+            ]);
+          } catch {
+            /* noop */
+          }
+        },
+      };
+    }
+
     const { BunkerSigner } = await import("nostr-tools/nip46");
     const { SimplePool } = await import("nostr-tools/pool");
 
-    const clientSecret = Uint8Array.from(auth.clientSecret);
     const pool = new SimplePool();
     const inner = BunkerSigner.fromBunker(
       clientSecret,

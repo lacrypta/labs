@@ -15,6 +15,7 @@ import {
   QrCode,
   Loader2,
   Wand2,
+  Smartphone,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -24,6 +25,7 @@ import { useScrollLock } from "@/lib/useScrollLock";
 import { useToast } from "./Toast";
 import { cn } from "@/lib/cn";
 import type { BunkerSigner as BunkerSignerType } from "nostr-tools/nip46";
+import { Nip46Client, type EncryptionVersion } from "@/lib/nip46Client";
 
 const QR_TIMEOUT_MS = 5 * 60_000;
 
@@ -75,7 +77,7 @@ export default function LoginModal({
   const [qrExpiresAt, setQrExpiresAt] = useState<number | null>(null);
   const [ncDiag, setNcDiag] = useState<string[]>([]);
   const [nip07Loading, setNip07Loading] = useState(false);
-  const signerRef = useRef<BunkerSignerType | null>(null);
+  const signerRef = useRef<BunkerSignerType | Nip46Client | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   function pushDiag(msg: string) {
@@ -151,11 +153,17 @@ export default function LoginModal({
     relays: string[],
     bunkerPubkey?: string,
     secret?: string | null,
+    encryption?: EncryptionVersion,
   ) {
     setAuth({
       method: "nip46",
       pubkey,
-      bunker: { pubkey: bunkerPubkey, relays, secret: secret ?? null },
+      bunker: {
+        pubkey: bunkerPubkey,
+        relays,
+        secret: secret ?? null,
+        ...(encryption ? { encryption } : {}),
+      },
       clientSecret: Array.from(clientSecret),
     });
   }
@@ -273,15 +281,10 @@ export default function LoginModal({
     setNcDiag([]);
     setNcState("qr");
     try {
-      const { BunkerSigner, createNostrConnectURI } = await import(
-        "nostr-tools/nip46"
-      );
+      const { createNostrConnectURI } = await import("nostr-tools/nip46");
       const { generateSecretKey, getPublicKey } = await import(
         "nostr-tools/pure"
       );
-      const { SimplePool } = await import("nostr-tools/pool");
-      const nip44 = await import("nostr-tools/nip44");
-      const nip04 = await import("nostr-tools/nip04").catch(() => null);
       const QRCode = (await import("qrcode")).default;
 
       const clientSecret = generateSecretKey();
@@ -318,134 +321,32 @@ export default function LoginModal({
 
       const abort = new AbortController();
       abortRef.current = abort;
-      const pool = new SimplePool();
 
-      type EncEvent = { pubkey: string; content: string; kind: number };
-      const TIMEOUT_SENTINEL = "__qr_timeout__";
-
-      const bunkerInfo = await new Promise<{ bunkerPubkey: string }>(
-        (resolve, reject) => {
-          let closed = false;
-          let subCloser: { close: () => void } | null = null;
-          const close = () => {
-            if (closed) return;
-            closed = true;
-            subCloser?.close();
-          };
-          const timer = window.setTimeout(() => {
-            close();
-            reject(new Error(TIMEOUT_SENTINEL));
-          }, QR_TIMEOUT_MS);
-          abort.signal.addEventListener("abort", () => {
-            window.clearTimeout(timer);
-            close();
-            reject(new Error("Cancelado por el usuario."));
-          });
-
-          const onevent = (event: EncEvent) => {
-            pushDiag(
-              `← evento kind ${event.kind} de ${event.pubkey.slice(0, 8)}…`,
-            );
-            let decrypted: string | null = null;
-            try {
-              const convKey = nip44.getConversationKey(
-                clientSecret,
-                event.pubkey,
-              );
-              decrypted = nip44.decrypt(event.content, convKey);
-              pushDiag(`  ✓ decifrado NIP-44`);
-            } catch {
-              pushDiag(`  ⚠ NIP-44 falló, intento NIP-04…`);
-              try {
-                decrypted =
-                  nip04?.decrypt(clientSecret, event.pubkey, event.content) ??
-                  null;
-                if (decrypted) pushDiag(`  ✓ decifrado NIP-04`);
-              } catch {
-                pushDiag(`  ✗ decifrado falló con ambos`);
-              }
-            }
-            if (!decrypted) return;
-
-            let response: {
-              id?: string;
-              result?: string;
-              error?: string;
-            };
-            try {
-              response = JSON.parse(decrypted);
-            } catch {
-              pushDiag(`  ✗ JSON inválido: ${decrypted.slice(0, 60)}`);
-              return;
-            }
-            pushDiag(
-              `  resp: ${JSON.stringify({
-                result: response.result?.slice?.(0, 40),
-                error: response.error?.slice?.(0, 40),
-              })}`,
-            );
-
-            if (response.result === "auth_url" && response.error) {
-              setAuthUrl(response.error);
-              pushDiag(`  → auth_url recibida`);
-              return;
-            }
-
-            // Accept secret match OR "ack" (non-spec-compliant signers)
-            const accepted =
-              response.result === secret || response.result === "ack";
-            if (accepted) {
-              window.clearTimeout(timer);
-              close();
-              pushDiag(`  ✓ conexión aceptada por ${event.pubkey.slice(0, 8)}…`);
-              resolve({ bunkerPubkey: event.pubkey });
-            } else {
-              pushDiag(
-                `  ⚠ result inesperado: "${response.result}" (esperado "${secret}")`,
-              );
-            }
-          };
-
-          subCloser = pool.subscribe(
-            relays,
-            { kinds: [24133], "#p": [clientPubkey], limit: 0 },
-            {
-              onevent,
-              oneose() {
-                pushDiag(`EOSE recibido, siguiendo en tiempo real`);
-              },
-              onclose(reason: unknown) {
-                pushDiag(`subscription cerrada: ${String(reason)}`);
-              },
-            },
-          );
-          pushDiag(`subscription abierta — esperando al firmante`);
+      const client = await Nip46Client.fromURI({
+        clientSecret,
+        relays,
+        secret,
+        timeoutMs: QR_TIMEOUT_MS,
+        abortSignal: abort.signal,
+        onAuthUrl: (url) => {
+          pushDiag(`  → auth_url recibida`);
+          setAuthUrl(url);
         },
-      );
+        onDiag: pushDiag,
+      });
+      signerRef.current = client;
 
       setNcState("connecting");
-      pushDiag(`construyendo BunkerSigner con ${bunkerInfo.bunkerPubkey.slice(0, 8)}…`);
-
-      const signer = BunkerSigner.fromBunker(
-        clientSecret,
-        {
-          pubkey: bunkerInfo.bunkerPubkey,
-          relays,
-          secret,
-        },
-        { pool, onauth: (url) => setAuthUrl(url) },
-      );
-      signerRef.current = signer;
-
       pushDiag(`solicitando pubkey del usuario…`);
-      const pubkey = await signer.getPublicKey();
+      const pubkey = await client.getPublicKey();
       pushDiag(`✓ pubkey recibida: ${pubkey.slice(0, 8)}…`);
       persistAuth(
         pubkey,
         clientSecret,
-        signer.bp.relays,
-        signer.bp.pubkey,
-        signer.bp.secret ?? secret,
+        client.relays,
+        client.bunkerPubkey,
+        client.secret ?? secret,
+        client.encryptionVersion,
       );
       setNcPubkey(pubkey);
       setNcState("connected");
@@ -954,6 +855,16 @@ function NcQr({
           </div>
         )}
       </div>
+
+      {uri && (
+        <a
+          href={uri}
+          className="md:hidden w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-nostr to-purple-600 text-white font-semibold text-sm hover:shadow-lg hover:shadow-nostr/30 transition-all"
+        >
+          <Smartphone className="h-4 w-4" />
+          Abrir en Amber
+        </a>
+      )}
 
       <div className="flex items-center gap-3 text-[10px] font-mono">
         <div className="inline-flex items-center gap-1.5 text-cyan">

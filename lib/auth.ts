@@ -12,6 +12,11 @@ export type Auth = {
     relays: string[];
     /** one-time auth secret from nostrconnect:// URI or bunker:// URL */
     secret?: string | null;
+    /** Transport encryption agreed during the QR handshake. Persisted so a
+     *  reload uses the same flavor (Amber defaults to NIP-04 in many builds;
+     *  nostr-tools' BunkerSigner only speaks NIP-44). Absent on legacy
+     *  paste-flow sessions, which always use NIP-44. */
+    encryption?: "nip44" | "nip04";
   };
   clientSecret?: number[];
   /** 32-byte secret key (nsec) — populated **only** when `method === "local"`.
