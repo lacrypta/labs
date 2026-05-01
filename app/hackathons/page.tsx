@@ -50,7 +50,8 @@ const STATUS_STYLE: Record<
   },
 };
 
-export default function HackathonsPage() {
+export default async function HackathonsPage() {
+  "use cache";
   const now = new Date();
   const withStatus = HACKATHONS.map((h) => ({
     h,

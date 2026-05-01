@@ -37,7 +37,9 @@ const COLS = [
   },
 ];
 
-export default function Footer() {
+export default async function Footer() {
+  "use cache";
+  const year = new Date().getFullYear();
   return (
     <footer className="relative mt-auto border-t border-border bg-background-elevated/40">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-bitcoin/40 to-transparent" />
@@ -117,8 +119,8 @@ export default function Footer() {
 
         <div className="mt-12 pt-6 border-t border-border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <p className="text-xs text-foreground-subtle font-mono">
-            © {new Date().getFullYear()} La Crypta Dev · Buenos Aires,
-            Argentina · Hecho con software libre
+            © {year} La Crypta Dev · Buenos Aires, Argentina · Hecho con
+            software libre
           </p>
           <div className="flex items-center gap-3 text-xs text-foreground-subtle">
             <span className="inline-flex items-center gap-1.5">

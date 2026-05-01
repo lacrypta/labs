@@ -23,12 +23,18 @@ import {
   rankedProjects,
 } from "@/lib/hackathons";
 import { cn } from "@/lib/cn";
+import { breadcrumbLd, eventLd, jsonLdScript } from "@/lib/jsonld";
 import HackathonProjectsList from "./HackathonProjectsList";
 import HackathonResultsClient from "./HackathonResultsClient";
 import HackathonInscripcionButton from "@/components/HackathonInscripcionButton";
 
 export function generateStaticParams() {
   return HACKATHONS.map((h) => ({ id: h.id }));
+}
+
+function truncate(s: string, max = 155): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1).trimEnd() + "…";
 }
 
 export async function generateMetadata({
@@ -39,9 +45,22 @@ export async function generateMetadata({
   const { id } = await params;
   const h = getHackathon(id);
   if (!h) return { title: "Hackatón" };
+  const description = truncate(`${h.focus}. ${h.description}`);
+  const url = `/hackathons/${h.id}`;
   return {
     title: `${h.name} · Hackatón #${h.number}`,
-    description: `${h.focus}. ${h.description}`,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      title: `${h.name} — Hackatón #${h.number} · La Crypta Dev`,
+      description,
+      url,
+      type: "website",
+    },
+    twitter: {
+      title: `${h.name} — Hackatón #${h.number}`,
+      description,
+    },
   };
 }
 
@@ -87,6 +106,7 @@ export default async function HackathonPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  "use cache";
   const { id } = await params;
   const hackathon = getHackathon(id);
   if (!hackathon) notFound();
@@ -102,6 +122,18 @@ export default async function HackathonPage({
 
   return (
     <div className="relative">
+      {jsonLdScript(eventLd(hackathon), "ld-event")}
+      {jsonLdScript(
+        breadcrumbLd([
+          { name: "Inicio", url: "https://lacrypta.dev" },
+          { name: "Hackatones", url: "https://lacrypta.dev/hackathons" },
+          {
+            name: hackathon.name,
+            url: `https://lacrypta.dev/hackathons/${hackathon.id}`,
+          },
+        ]),
+        "ld-breadcrumbs",
+      )}
       {/* Hero */}
       <section className="relative pt-28 pb-16 overflow-hidden">
         <div className="absolute inset-0 -z-10">

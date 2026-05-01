@@ -22,7 +22,9 @@ import {
 } from "@/lib/hackathons";
 import { GithubIcon } from "@/components/BrandIcons";
 import { cn } from "@/lib/cn";
-import NostrProjectPage from "./NostrProjectPage";
+import { breadcrumbLd, creativeWorkLd, jsonLdScript } from "@/lib/jsonld";
+import { getNostrProject } from "@/lib/nostrCache";
+import NostrProjectServer from "./NostrProjectServer";
 
 export function generateStaticParams() {
   return HACKATHONS.flatMap((h) =>
@@ -33,6 +35,11 @@ export function generateStaticParams() {
   );
 }
 
+function truncate(s: string, max = 155): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1).trimEnd() + "…";
+}
+
 export async function generateMetadata({
   params,
 }: {
@@ -40,11 +47,41 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id, projectId } = await params;
   const h = getHackathon(id);
-  const p = getProject(id, projectId);
-  if (!h || !p) return { title: "Proyecto" };
+  if (!h) return { title: "Proyecto" };
+
+  const curated = getProject(id, projectId);
+  let name: string | null = null;
+  let description = "";
+
+  if (curated) {
+    name = curated.name;
+    description = curated.description;
+  } else {
+    const fromNostr = await getNostrProject(id, projectId);
+    if (fromNostr) {
+      name = fromNostr.name;
+      description = fromNostr.description;
+    }
+  }
+
+  if (!name) return { title: "Proyecto" };
+
+  const url = `/hackathons/${id}/${projectId}`;
+  const desc = truncate(description || `Proyecto presentado en ${h.name}.`);
   return {
-    title: `${p.name} · ${h.name}`,
-    description: p.description,
+    title: `${name} · ${h.name}`,
+    description: desc,
+    alternates: { canonical: url },
+    openGraph: {
+      title: `${name} · ${h.name}`,
+      description: desc,
+      url,
+      type: "article",
+    },
+    twitter: {
+      title: `${name} · ${h.name}`,
+      description: desc,
+    },
   };
 }
 
@@ -73,7 +110,7 @@ export default async function ProjectPage({
   const hackathon = getHackathon(id);
   if (!hackathon) notFound();
   const project = getProject(id, projectId);
-  if (!project) return <NostrProjectPage hackathonId={id} projectId={projectId} />;
+  if (!project) return <NostrProjectServer hackathonId={id} projectId={projectId} />;
 
   const report = project.report;
   const award = prizeForProject(id, projectId);
@@ -81,6 +118,22 @@ export default async function ProjectPage({
 
   return (
     <div className="relative pt-24 pb-16">
+      {jsonLdScript(creativeWorkLd(project, hackathon), "ld-project")}
+      {jsonLdScript(
+        breadcrumbLd([
+          { name: "Inicio", url: "https://lacrypta.dev" },
+          { name: "Hackatones", url: "https://lacrypta.dev/hackathons" },
+          {
+            name: hackathon.name,
+            url: `https://lacrypta.dev/hackathons/${hackathon.id}`,
+          },
+          {
+            name: project.name,
+            url: `https://lacrypta.dev/hackathons/${hackathon.id}/${project.id}`,
+          },
+        ]),
+        "ld-breadcrumbs",
+      )}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
         <Link
           href={`/hackathons/${hackathon.id}`}

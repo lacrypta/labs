@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   title: "Mis proyectos",
   description:
     "Tus proyectos, firmados con tu clave Nostr y guardados en relays abiertos.",
+  robots: { index: false, follow: false },
 };
 
 export default function UserProjectsPage() {

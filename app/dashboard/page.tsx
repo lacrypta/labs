@@ -4,6 +4,7 @@ import DashboardClient from "./DashboardClient";
 export const metadata: Metadata = {
   title: "Dashboard",
   description: "Tu perfil de Nostr en La Crypta Dev.",
+  robots: { index: false, follow: false },
 };
 
 export default function DashboardPage() {
