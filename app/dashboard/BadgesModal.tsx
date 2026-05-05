@@ -1,8 +1,29 @@
 "use client";
 
-import { AnimatePresence, LayoutGroup, Reorder, motion } from "framer-motion";
+import {
+  AnimatePresence,
+  LayoutGroup,
+  Reorder,
+  motion,
+  useAnimationControls,
+} from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Award, Check, GripVertical, Loader2, Save, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Award,
+  Calendar,
+  Check,
+  Copy,
+  ExternalLink,
+  Eye,
+  GripVertical,
+  Loader2,
+  Pencil,
+  Save,
+  Sparkles,
+  User as UserIcon,
+  X,
+} from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { useScrollLock } from "@/lib/useScrollLock";
 import { cn } from "@/lib/cn";
@@ -13,6 +34,36 @@ import {
   type AwardedBadge,
   type ProfileBadges,
 } from "@/lib/nostrBadges";
+import { useNostrProfile } from "@/lib/nostrProfile";
+
+type Mode = "view" | "edit";
+
+/**
+ * Drives a one-shot wobble on entry to edit mode. 5° each side, three back-
+ * and-forth oscillations over 1.5s, settling at 0°. Each tile gets a random
+ * start delay so the wobble looks naturally desynced across the grid.
+ *
+ * Applied to an inner wrapper inside the tile because Framer's `layout` /
+ * `layoutId` projection system on the outer element resets `transform` to
+ * none — rotating the outer would be silently ignored.
+ */
+function useWobble(wobbleNonce: number) {
+  const controls = useAnimationControls();
+  const delay = useMemo(() => Math.random() * 0.3, []);
+
+  useEffect(() => {
+    if (wobbleNonce === 0) {
+      controls.set({ rotate: 0 });
+      return;
+    }
+    controls.start({
+      rotate: [0, -5, 5, -5, 5, -5, 5, 0],
+      transition: { duration: 1.5, delay, ease: "easeInOut" },
+    });
+  }, [wobbleNonce, controls, delay]);
+
+  return controls;
+}
 
 export default function BadgesModal({
   open,
@@ -34,6 +85,18 @@ export default function BadgesModal({
   const { push: pushToast } = useToast();
   const [selected, setSelected] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [mode, setMode] = useState<Mode>("view");
+  const [detail, setDetail] = useState<AwardedBadge | null>(null);
+  // Bumping this nonce on every view → edit transition fires a one-shot
+  // wobble on each tile to signal that they're now draggable.
+  const [wobbleNonce, setWobbleNonce] = useState(0);
+  const prevMode = useRef<Mode>("view");
+  useEffect(() => {
+    if (prevMode.current === "view" && mode === "edit") {
+      setWobbleNonce((n) => n + 1);
+    }
+    prevMode.current = mode;
+  }, [mode]);
 
   useScrollLock(open);
 
@@ -42,6 +105,13 @@ export default function BadgesModal({
     if (!open) return;
     setSelected(profileBadges?.aTags ?? []);
   }, [open, profileBadges]);
+
+  // Reset transient UI state on close so a re-open lands on the default view.
+  useEffect(() => {
+    if (open) return;
+    setMode("view");
+    setDetail(null);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -71,18 +141,19 @@ export default function BadgesModal({
     );
   }
 
-  // Partition into worn (selected) and unworn. Worn follow the user-defined
-  // `selected` order (which is what gets published to NIP-58). Unworn fall
-  // back to the raw discovery order from `badges`.
+  // In view mode, render against the published state (currentATags) so users
+  // see what's actually live on their profile. In edit mode render against
+  // the working `selected` so toggles/reorders update immediately.
+  const displayATags = mode === "edit" ? selected : currentATags;
   const wornBadges = useMemo(() => {
     const byATag = new Map(badges.map((b) => [b.aTag, b]));
-    return selected
+    return displayATags
       .map((a) => byATag.get(a))
       .filter((b): b is AwardedBadge => Boolean(b));
-  }, [badges, selected]);
+  }, [badges, displayATags]);
   const unwornBadges = useMemo(
-    () => badges.filter((b) => !selected.includes(b.aTag)),
-    [badges, selected],
+    () => badges.filter((b) => !displayATags.includes(b.aTag)),
+    [badges, displayATags],
   );
   // Only the subset of `selected` that has a resolved badge; passed to the
   // reorder group so we don't expose unresolved aTags (they'd have no UI
@@ -187,30 +258,51 @@ export default function BadgesModal({
                   <p className="text-xs text-foreground-muted">
                     NIP-58 · {badges.length} otorgado
                     {badges.length === 1 ? "" : "s"}
-                    {selected.length > 0 && (
+                    {wornBadges.length > 0 && (
                       <>
                         {" · "}
                         <span className="text-nostr">
-                          {selected.length} usado
-                          {selected.length === 1 ? "" : "s"} en perfil
+                          {wornBadges.length} usado
+                          {wornBadges.length === 1 ? "" : "s"} en perfil
                         </span>
                       </>
                     )}
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => !saving && onClose()}
-                disabled={saving}
-                className="p-2 rounded-lg text-foreground-muted hover:text-foreground hover:bg-white/5 transition-colors disabled:opacity-50"
-                aria-label="Cerrar"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {badges.length > 0 && !detail && (
+                  <ModeToggle
+                    mode={mode}
+                    onChange={(m) => {
+                      if (saving) return;
+                      setMode(m);
+                      // Discard any unsaved selection edits when leaving edit
+                      // mode — keeps view mode honest about the published state.
+                      if (m === "view") setSelected(currentATags);
+                    }}
+                    disabled={saving}
+                  />
+                )}
+                <button
+                  onClick={() => !saving && onClose()}
+                  disabled={saving}
+                  className="p-2 rounded-lg text-foreground-muted hover:text-foreground hover:bg-white/5 transition-colors disabled:opacity-50"
+                  aria-label="Cerrar"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             <div className="relative flex-1 overflow-y-auto px-6 py-5">
-              {loading && badges.length === 0 ? (
+              {detail ? (
+                <BadgeDetailView
+                  badge={detail}
+                  isWorn={displayATags.includes(detail.aTag)}
+                  onBack={() => setDetail(null)}
+                />
+              ) : loading && badges.length === 0 ? (
                 <div className="py-16 flex flex-col items-center gap-3 text-foreground-muted">
                   <Loader2 className="h-5 w-5 animate-spin" />
                   <span className="text-xs font-mono uppercase tracking-widest">
@@ -231,13 +323,21 @@ export default function BadgesModal({
               ) : (
                 <LayoutGroup>
                   <div className="space-y-6">
-                    <WornSection
-                      badges={wornBadges}
-                      values={wornATags}
-                      onReorder={handleReorder}
-                      onToggle={toggle}
-                      disabled={saving}
-                    />
+                    {mode === "edit" ? (
+                      <WornSection
+                        badges={wornBadges}
+                        values={wornATags}
+                        onReorder={handleReorder}
+                        onToggle={toggle}
+                        disabled={saving}
+                        wobbleNonce={wobbleNonce}
+                      />
+                    ) : (
+                      <ViewWornSection
+                        badges={wornBadges}
+                        onOpen={(b) => setDetail(b)}
+                      />
+                    )}
 
                     {unwornBadges.length > 0 && (
                       <BadgeSection
@@ -246,15 +346,25 @@ export default function BadgesModal({
                         accent="muted"
                       >
                         <AnimatePresence initial={false}>
-                          {unwornBadges.map((b) => (
-                            <MiniBadgeTile
-                              key={b.awardId}
-                              badge={b}
-                              selected={false}
-                              onToggle={() => toggle(b.aTag)}
-                              disabled={saving}
-                            />
-                          ))}
+                          {unwornBadges.map((b) =>
+                            mode === "edit" ? (
+                              <MiniBadgeTile
+                                key={b.awardId}
+                                badge={b}
+                                selected={false}
+                                onToggle={() => toggle(b.aTag)}
+                                disabled={saving}
+                                wobbleNonce={wobbleNonce}
+                              />
+                            ) : (
+                              <ViewBadgeTile
+                                key={b.awardId}
+                                badge={b}
+                                worn={false}
+                                onClick={() => setDetail(b)}
+                              />
+                            ),
+                          )}
                         </AnimatePresence>
                       </BadgeSection>
                     )}
@@ -265,8 +375,10 @@ export default function BadgesModal({
 
             <div className="relative flex items-center justify-between gap-3 px-6 py-4 bg-black/30 border-t border-border">
               <div className="text-[11px] text-foreground-subtle font-mono tabular-nums">
-                {dirty
-                  ? "Hay cambios sin guardar"
+                {mode === "edit"
+                  ? dirty
+                    ? "Hay cambios sin guardar"
+                    : "Sincronizado con tu perfil"
                   : "Sincronizado con tu perfil"}
               </div>
               <div className="flex items-center gap-2">
@@ -277,23 +389,25 @@ export default function BadgesModal({
                 >
                   Cerrar
                 </button>
-                <button
-                  onClick={save}
-                  disabled={!dirty || saving}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-nostr to-purple-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Firmando…
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4" />
-                      Guardar selección
-                    </>
-                  )}
-                </button>
+                {mode === "edit" && (
+                  <button
+                    onClick={save}
+                    disabled={!dirty || saving}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-nostr to-purple-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Firmando…
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4" />
+                        Guardar selección
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           </motion.div>
@@ -313,12 +427,14 @@ function WornSection({
   onReorder,
   onToggle,
   disabled,
+  wobbleNonce,
 }: {
   badges: AwardedBadge[];
   values: string[];
   onReorder: (next: string[]) => void;
   onToggle: (aTag: string) => void;
   disabled: boolean;
+  wobbleNonce: number;
 }) {
   const accent: "success" | "muted" = "success";
   return (
@@ -363,6 +479,7 @@ function WornSection({
                 badge={b}
                 disabled={disabled}
                 onToggle={() => onToggle(b.aTag)}
+                wobbleNonce={wobbleNonce}
               />
             ))}
           </AnimatePresence>
@@ -387,10 +504,12 @@ function DraggableWornBadge({
   badge,
   disabled,
   onToggle,
+  wobbleNonce,
 }: {
   badge: AwardedBadge;
   disabled: boolean;
   onToggle: () => void;
+  wobbleNonce: number;
 }) {
   const tapStart = useRef<{ x: number; y: number } | null>(null);
   // Distance-based discriminator: anything under this counts as a tap,
@@ -398,6 +517,7 @@ function DraggableWornBadge({
   // hold without triggering a toggle.
   const TAP_MAX_DISTANCE = 6; // px
   const name = badge.definition?.name ?? badge.definition?.d ?? "Badge";
+  const wobble = useWobble(wobbleNonce);
 
   return (
     <Reorder.Item
@@ -440,7 +560,9 @@ function DraggableWornBadge({
         disabled ? "cursor-progress" : "cursor-grab active:cursor-grabbing",
       )}
     >
-      <BadgeVisual badge={badge} selected />
+      <motion.div className="absolute inset-0" animate={wobble}>
+        <BadgeVisual badge={badge} selected />
+      </motion.div>
     </Reorder.Item>
   );
 }
@@ -564,14 +686,17 @@ function MiniBadgeTile({
   selected,
   onToggle,
   disabled,
+  wobbleNonce,
 }: {
   badge: AwardedBadge;
   selected: boolean;
   onToggle: () => void;
   disabled: boolean;
+  wobbleNonce: number;
 }) {
   const def = badge.definition;
   const name = def?.name || def?.d || "Badge";
+  const wobble = useWobble(wobbleNonce);
   return (
     <motion.button
       layout
@@ -596,7 +721,393 @@ function MiniBadgeTile({
         disabled && "cursor-progress",
       )}
     >
-      <BadgeVisual badge={badge} selected={selected} />
+      <motion.div className="absolute inset-0" animate={wobble}>
+        <BadgeVisual badge={badge} selected={selected} />
+      </motion.div>
     </motion.button>
+  );
+}
+
+/** Segmented toggle between view and edit modes. Mirrors the look of pill
+ *  controls used elsewhere in the dashboard. */
+function ModeToggle({
+  mode,
+  onChange,
+  disabled,
+}: {
+  mode: Mode;
+  onChange: (m: Mode) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Modo"
+      className="inline-flex items-center rounded-lg border border-border bg-white/[0.03] p-0.5"
+    >
+      <ModeToggleButton
+        active={mode === "view"}
+        disabled={disabled}
+        onClick={() => onChange("view")}
+        label="Ver"
+        icon={<Eye className="h-3.5 w-3.5" />}
+      />
+      <ModeToggleButton
+        active={mode === "edit"}
+        disabled={disabled}
+        onClick={() => onChange("edit")}
+        label="Editar"
+        icon={<Pencil className="h-3.5 w-3.5" />}
+      />
+    </div>
+  );
+}
+
+function ModeToggleButton({
+  active,
+  disabled,
+  onClick,
+  label,
+  icon,
+}: {
+  active: boolean;
+  disabled: boolean;
+  onClick: () => void;
+  label: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={active}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors disabled:opacity-50",
+        active
+          ? "bg-nostr/15 border border-nostr/30 text-nostr"
+          : "border border-transparent text-foreground-muted hover:text-foreground hover:bg-white/5",
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+/** View-mode worn section. No drag, no toggle — clicking a tile opens the
+ *  detail view. Mirrors WornSection visually so the layout is stable across
+ *  modes. */
+function ViewWornSection({
+  badges,
+  onOpen,
+}: {
+  badges: AwardedBadge[];
+  onOpen: (b: AwardedBadge) => void;
+}) {
+  return (
+    <section>
+      <div className="flex items-center gap-2 mb-3">
+        <h3 className="font-display font-bold text-[11px] uppercase tracking-widest text-foreground-muted">
+          En el perfil
+        </h3>
+        <span
+          className={cn(
+            "inline-flex items-center px-1.5 py-0.5 rounded-full border text-[10px] font-mono tabular-nums",
+            badges.length > 0
+              ? "bg-success/10 border-success/30 text-success"
+              : "bg-white/[0.03] border-border text-foreground-subtle",
+          )}
+        >
+          {badges.length}
+        </span>
+      </div>
+      {badges.length === 0 ? (
+        <div className="text-xs text-foreground-subtle italic px-1 py-4 border border-dashed border-border rounded-lg text-center">
+          Todavía no elegiste ningún badge para mostrar.
+        </div>
+      ) : (
+        <motion.div
+          layout
+          className="grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-2"
+        >
+          <AnimatePresence initial={false}>
+            {badges.map((b) => (
+              <ViewBadgeTile
+                key={b.awardId}
+                badge={b}
+                worn
+                onClick={() => onOpen(b)}
+              />
+            ))}
+          </AnimatePresence>
+        </motion.div>
+      )}
+    </section>
+  );
+}
+
+/** Read-only badge tile for view mode. Click opens the detail view. Worn
+ *  badges get a subtle green ring; unworn render at full opacity (unlike
+ *  edit mode, which dims unworn to suggest selectability). */
+function ViewBadgeTile({
+  badge,
+  worn,
+  onClick,
+}: {
+  badge: AwardedBadge;
+  worn: boolean;
+  onClick: () => void;
+}) {
+  const def = badge.definition;
+  const name = def?.name || def?.d || "Badge";
+  return (
+    <motion.button
+      layout
+      layoutId={`badge-tile-${badge.awardId}`}
+      type="button"
+      onClick={onClick}
+      title={name}
+      aria-label={`Ver detalle: ${name}`}
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.8 }}
+      transition={{ type: "spring", damping: 24, stiffness: 320 }}
+      whileHover={{ scale: 1.04 }}
+      whileTap={{ scale: 0.93 }}
+      className={cn(
+        "group relative aspect-square rounded-lg overflow-hidden border cursor-pointer transition-[border-color,box-shadow]",
+        worn
+          ? "border-success/40 shadow-[0_0_0_1px_rgba(34,197,94,0.18)]"
+          : "border-border hover:border-border-strong",
+      )}
+    >
+      <BadgeVisual badge={badge} selected={worn} />
+    </motion.button>
+  );
+}
+
+/** Detail panel for a single badge — large image, name, description, and
+ *  metadata (issuer npub, awarded date). Rendered inside the modal body
+ *  with a back button to return to the grid. */
+function BadgeDetailView({
+  badge,
+  isWorn,
+  onBack,
+}: {
+  badge: AwardedBadge;
+  isWorn: boolean;
+  onBack: () => void;
+}) {
+  const { push: pushToast } = useToast();
+  const def = badge.definition;
+  const [imgOk, setImgOk] = useState(true);
+  const image = imgOk ? (def?.image ?? def?.thumb) : null;
+  const name = def?.name || def?.d || "Badge";
+  const description = def?.description?.trim() || "";
+  const date = useMemo(
+    () =>
+      new Date(badge.awardedAt * 1000).toLocaleDateString("es-AR", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }),
+    [badge.awardedAt],
+  );
+
+  const [issuerNpub, setIssuerNpub] = useState<string>(badge.issuer);
+  useEffect(() => {
+    let cancelled = false;
+    import("nostr-tools")
+      .then(({ nip19 }) => {
+        if (cancelled) return;
+        try {
+          setIssuerNpub(nip19.npubEncode(badge.issuer));
+        } catch {
+          /* keep hex fallback */
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [badge.issuer]);
+
+  const shortNpub = useMemo(
+    () =>
+      issuerNpub.startsWith("npub1")
+        ? `${issuerNpub.slice(0, 12)}…${issuerNpub.slice(-6)}`
+        : `${issuerNpub.slice(0, 8)}…${issuerNpub.slice(-6)}`,
+    [issuerNpub],
+  );
+
+  const { profile: issuerProfile, loading: issuerLoading } = useNostrProfile(
+    badge.issuer,
+  );
+  const issuerName =
+    issuerProfile?.display_name?.trim() || issuerProfile?.name?.trim() || "";
+  const issuerHandle = issuerProfile?.nip05?.trim() || "";
+  const profileHref = issuerNpub.startsWith("npub1")
+    ? `https://njump.me/${issuerNpub}`
+    : `https://njump.me/${badge.issuer}`;
+
+  async function copyNpub() {
+    try {
+      await navigator.clipboard.writeText(issuerNpub);
+      pushToast({ kind: "success", title: "Copiado", duration: 2000 });
+    } catch {
+      pushToast({ kind: "error", title: "No se pudo copiar" });
+    }
+  }
+
+  return (
+    <motion.div
+      key="detail"
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 20 }}
+      transition={{ type: "spring", damping: 24, stiffness: 280 }}
+      className="space-y-6"
+    >
+      <button
+        type="button"
+        onClick={onBack}
+        className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground-muted hover:text-foreground transition-colors"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Volver
+      </button>
+
+      <div className="flex flex-col items-center text-center gap-4">
+        <div className="relative h-48 w-48 sm:h-56 sm:w-56 rounded-2xl overflow-hidden border border-border-strong bg-gradient-to-br from-nostr/10 via-transparent to-bitcoin/5">
+          {image ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={image}
+              alt={name}
+              className="absolute inset-0 w-full h-full object-cover"
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              onError={() => setImgOk(false)}
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center text-nostr">
+              <Award className="h-16 w-16" />
+            </div>
+          )}
+        </div>
+        <div className="space-y-2">
+          <h3 className="font-display font-bold text-2xl">{name}</h3>
+          {isWorn && (
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-success/10 border border-success/30 text-success text-[11px] font-mono uppercase tracking-widest">
+              <Sparkles className="h-3 w-3" />
+              en el perfil
+            </span>
+          )}
+          {description && (
+            <p className="text-sm text-foreground-muted max-w-md mx-auto whitespace-pre-line">
+              {description}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+        <div className="rounded-lg border border-border bg-white/[0.02] px-3 py-2.5">
+          <dt className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-widest text-foreground-subtle">
+            <Calendar className="h-3 w-3" />
+            otorgado
+          </dt>
+          <dd className="mt-1 font-semibold">{date}</dd>
+        </div>
+        <div className="rounded-lg border border-border bg-white/[0.02] px-3 py-2.5">
+          <dt className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-widest text-foreground-subtle">
+            <Award className="h-3 w-3" />
+            identificador
+          </dt>
+          <dd className="mt-1 font-mono text-xs break-all">
+            {def?.d ?? badge.aTag}
+          </dd>
+        </div>
+        <div className="rounded-lg border border-border bg-white/[0.02] px-3 py-2.5 sm:col-span-2">
+          <dt className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-widest text-foreground-subtle">
+            <Sparkles className="h-3 w-3" />
+            emitido por
+          </dt>
+          <dd className="mt-2 flex items-center gap-3">
+            <IssuerAvatar
+              picture={issuerProfile?.picture}
+              name={issuerName || badge.issuer}
+              loading={issuerLoading && !issuerProfile}
+            />
+            <div className="min-w-0 flex-1">
+              <a
+                href={profileHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 font-display font-bold text-sm text-foreground hover:text-nostr transition-colors"
+              >
+                <span className="truncate">
+                  {issuerName ||
+                    (issuerLoading ? "Resolviendo perfil…" : shortNpub)}
+                </span>
+                <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+              </a>
+              <div className="text-[11px] text-foreground-subtle font-mono truncate">
+                {issuerHandle || shortNpub}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={copyNpub}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono uppercase tracking-widest text-foreground-muted hover:text-foreground hover:bg-white/5 transition-colors shrink-0"
+              aria-label="Copiar npub"
+            >
+              <Copy className="h-3 w-3" />
+              copiar
+            </button>
+          </dd>
+        </div>
+      </dl>
+    </motion.div>
+  );
+}
+
+/** Round avatar for the issuer card. Falls back to an icon when the profile
+ *  has no picture or the image fails to load. */
+function IssuerAvatar({
+  picture,
+  name,
+  loading,
+}: {
+  picture?: string;
+  name: string;
+  loading: boolean;
+}) {
+  const [imgOk, setImgOk] = useState(true);
+  const showImage = !!picture && imgOk;
+  return (
+    <div
+      className={cn(
+        "relative h-11 w-11 shrink-0 rounded-full overflow-hidden border border-border bg-white/[0.04] flex items-center justify-center",
+        loading && "animate-pulse",
+      )}
+      aria-hidden
+    >
+      {showImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={picture}
+          alt={name}
+          className="absolute inset-0 w-full h-full object-cover"
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setImgOk(false)}
+        />
+      ) : (
+        <UserIcon className="h-5 w-5 text-foreground-muted" />
+      )}
+    </div>
   );
 }

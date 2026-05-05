@@ -82,7 +82,16 @@
       "year": 2026,
       "icon": "🛒",
       "tags": ["E-commerce", "Lightning"],
-      "topics": ["BTCPay Server", "Point of Sale", "Subscriptions", "Checkout Flows"],
+      "topics": ["BTCPay Server", "WordPress", "Magento", "Point of Sale", "Tips", "Subscriptions", "Checkout Flows", "Agentes"],
+      "sponsors": [
+        {
+          "name": "Wapupay",
+          "logo": "/sponsors/wapupay.svg",
+          "url": "https://wapupay.com",
+          "tagline": "SATS a ARS (sin KYC)",
+          "docs": "https://wapu.shiafu.com/"
+        }
+      ],
       "dates": [
         { "date": "2026-05-05", "day": 5, "type": "apertura", "title": "Community Call — Apertura", "description": "Se abre el formulario de inscripción. Podés anotarte solo o en grupo (máx 4 personas)." },
         { "date": "2026-05-19", "day": 19, "type": "cierre", "title": "Community Call — Cierre inscripciones", "description": "Último día para inscribirte con un proyecto completo." },

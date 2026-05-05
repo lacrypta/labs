@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 140" role="img" aria-label="Wapupay">
+  <title>Wapupay</title>
+  <style>
+    .wp-text { font-family: "Space Grotesk", "Inter", system-ui, -apple-system, Segoe UI, Roboto, sans-serif; font-weight: 900; font-size: 110px; letter-spacing: -2px; }
+  </style>
+  <text x="180" y="100" text-anchor="middle" class="wp-text" stroke="#0e2a18" stroke-width="10" stroke-linejoin="round" paint-order="stroke" fill="#ffffff">Wap<tspan fill="#ff2680">u</tspan></text>
+</svg>

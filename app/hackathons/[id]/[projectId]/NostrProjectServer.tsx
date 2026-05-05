@@ -1,4 +1,3 @@
-import { notFound } from "next/navigation";
 import { getNostrProject } from "@/lib/nostrCache";
 import { getHackathon } from "@/lib/hackathons";
 import { breadcrumbLd, jsonLdScript } from "@/lib/jsonld";
@@ -12,6 +11,11 @@ import NostrProjectPageClient from "./NostrProjectPageClient";
  * The interactive UI (edit, archive, auth-gated actions, live
  * revalidation, author avatars) is owned by NostrProjectPageClient,
  * which still hydrates and runs as before.
+ *
+ * If the project isn't in the cached snapshot yet (e.g. just-submitted
+ * project, cache TTL hasn't expired), don't 404 — fall through to the
+ * client component which queries relays live. SEO content is skipped
+ * for those cases until the cache catches up.
  */
 export default async function NostrProjectServer({
   hackathonId,
@@ -21,7 +25,14 @@ export default async function NostrProjectServer({
   projectId: string;
 }) {
   const project = await getNostrProject(hackathonId, projectId);
-  if (!project) notFound();
+  if (!project) {
+    return (
+      <NostrProjectPageClient
+        hackathonId={hackathonId}
+        projectId={projectId}
+      />
+    );
+  }
 
   const hackathon = getHackathon(hackathonId);
   const url = `https://lacrypta.dev/hackathons/${hackathonId}/${projectId}`;

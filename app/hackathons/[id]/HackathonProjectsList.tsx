@@ -12,6 +12,7 @@ import {
   Zap,
 } from "lucide-react";
 import {
+  hackathonStatus,
   mergeWithSubmissions,
   prizedProjects,
   type Hackathon,
@@ -19,6 +20,7 @@ import {
   type HackathonSubmission,
   type PrizedProject,
 } from "@/lib/hackathons";
+import HackathonInscripcionButton from "@/components/HackathonInscripcionButton";
 import {
   fetchAuthorPictures,
   fetchCommunityProjects,
@@ -178,16 +180,21 @@ export default function HackathonProjectsList({
               )}
             </h2>
           </div>
-          <button
-            onClick={scan}
-            disabled={scanning}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-white/[0.03] hover:bg-white/[0.06] text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-progress"
-          >
-            <RefreshCw
-              className={cn("h-3.5 w-3.5", scanning && "animate-spin")}
-            />
-            <span className="hidden sm:inline">Rescanear Nostr</span>
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {hackathonStatus(hackathon) !== "closed" && (
+              <HackathonInscripcionButton hackathonId={hackathon.id} />
+            )}
+            <button
+              onClick={scan}
+              disabled={scanning}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-white/[0.03] hover:bg-white/[0.06] text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-progress"
+            >
+              <RefreshCw
+                className={cn("h-3.5 w-3.5", scanning && "animate-spin")}
+              />
+              <span className="hidden sm:inline">Rescanear Nostr</span>
+            </button>
+          </div>
         </div>
 
         {merged.length === 0 ? (

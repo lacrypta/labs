@@ -136,16 +136,11 @@ export default function LoginModal({
     setNip07Loading(false);
   }, [open]);
 
-  useEffect(() => {
-    if (ncState !== "connected") return;
-    // Prefetch + auto-navigate shortly after success
-    router.prefetch(redirectTo);
-    const t = window.setTimeout(() => {
-      router.push(redirectTo);
-      onClose();
-    }, 700);
-    return () => window.clearTimeout(t);
-  }, [ncState, router, onClose]);
+  function finishLogin() {
+    setNcState("connected");
+    router.push(redirectTo);
+    onClose();
+  }
 
   function persistAuth(
     pubkey: string,
@@ -264,7 +259,7 @@ export default function LoginModal({
         pointer.secret,
       );
       setNcPubkey(pubkey);
-      setNcState("connected");
+      finishLogin();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "No se pudo conectar";
       pushDiag(`✗ error: ${msg}`);
@@ -349,7 +344,7 @@ export default function LoginModal({
         client.encryptionVersion,
       );
       setNcPubkey(pubkey);
-      setNcState("connected");
+      finishLogin();
     } catch (e) {
       if (abortRef.current?.signal.aborted) return;
       const msg = e instanceof Error ? e.message : "No se pudo conectar";

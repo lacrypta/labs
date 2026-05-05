@@ -25,6 +25,17 @@ export type HackathonEvent = {
   youtube?: string;
 };
 
+export type Sponsor = {
+  name: string;
+  /** Path under /public (e.g. `/sponsors/wapupay.png`) or absolute URL. */
+  logo: string;
+  url?: string;
+  /** Optional tagline rendered next to the logo. */
+  tagline?: string;
+  /** Integration / API docs the hackers will want to read. */
+  docs?: string;
+};
+
 export type Hackathon = {
   id: string;
   number: number;
@@ -40,6 +51,7 @@ export type Hackathon = {
   tags: string[];
   topics: string[];
   dates: HackathonEvent[];
+  sponsors?: Sponsor[];
 };
 
 export type PrizeSlot = {

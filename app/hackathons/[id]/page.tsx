@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   ArrowLeft,
   ArrowRight,
+  BookOpen,
   Calendar,
   Trophy,
   CirclePlay,
@@ -21,6 +22,7 @@ import {
   prizedProjects,
   programRules,
   rankedProjects,
+  type Sponsor,
 } from "@/lib/hackathons";
 import { cn } from "@/lib/cn";
 import { breadcrumbLd, eventLd, jsonLdScript } from "@/lib/jsonld";
@@ -99,6 +101,77 @@ function medal(position: number | null): string {
   if (position === 3) return "🥉";
   if (!position) return "";
   return `#${position}`;
+}
+
+function SponsorStrip({ sponsors }: { sponsors: Sponsor[] }) {
+  if (sponsors.length === 0) return null;
+  return (
+    <div className="mt-10 rounded-2xl border border-border bg-background-card/60 backdrop-blur-sm p-5 sm:p-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5 sm:gap-8">
+        <div className="shrink-0">
+          <div className="text-[10px] font-mono font-semibold tracking-widest text-foreground-subtle uppercase">
+            Hackatón presentado por
+          </div>
+          <div className="mt-1 text-xs text-foreground-muted">
+            Sponsor oficial de la edición
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-4 flex-1">
+          {sponsors.map((s) => {
+            const inner = (
+              <span className="inline-flex items-center gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={s.logo}
+                  alt={s.name}
+                  className="h-10 sm:h-12 w-auto object-contain"
+                  loading="lazy"
+                />
+                {s.tagline && (
+                  <span className="text-xs font-mono uppercase tracking-widest text-foreground-muted">
+                    {s.tagline}
+                  </span>
+                )}
+              </span>
+            );
+            return (
+              <span
+                key={s.name}
+                className="inline-flex flex-wrap items-center gap-x-5 gap-y-2"
+              >
+                {s.url ? (
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer sponsored"
+                    className="group inline-flex items-center gap-1.5 hover:opacity-90 transition-opacity"
+                    aria-label={`${s.name} (sponsor)`}
+                  >
+                    {inner}
+                    <ExternalLink className="h-3 w-3 text-foreground-subtle group-hover:text-foreground-muted transition-colors" />
+                  </a>
+                ) : (
+                  inner
+                )}
+                {s.docs && (
+                  <a
+                    href={s.docs}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-white/[0.03] text-xs font-mono font-semibold uppercase tracking-widest text-foreground-muted hover:border-border-strong hover:text-foreground transition-colors"
+                  >
+                    <BookOpen className="h-3.5 w-3.5" />
+                    Documentación
+                    <ExternalLink className="h-3 w-3 opacity-60" />
+                  </a>
+                )}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default async function HackathonPage({
@@ -194,6 +267,74 @@ export default async function HackathonPage({
               )}
             </div>
           </div>
+
+          {hackathon.sponsors && hackathon.sponsors.length > 0 && (
+            <SponsorStrip sponsors={hackathon.sponsors} />
+          )}
+
+          <div className="mt-6">
+            <Card
+              title="Premios"
+              icon={<Trophy className="h-4 w-4" />}
+              subtitle={`${formatSats(PROGRAM.prizePerHackathon)} sats`}
+            >
+              {awards.length > 0 ? (
+                <>
+                  <ol className="space-y-2">
+                    {awards.map((a) => (
+                      <li key={a.project.id}>
+                        <Link
+                          href={`/hackathons/${hackathon.id}/${a.project.id}`}
+                          className={cn(
+                            "group flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors",
+                            a.position === 1
+                              ? "bg-bitcoin/10 border-bitcoin/30 hover:bg-bitcoin/15"
+                              : "bg-white/[0.02] border-border hover:bg-white/[0.05]",
+                          )}
+                        >
+                          <span className="text-lg leading-none shrink-0 w-7 text-center">
+                            {medal(a.position) || (
+                              <span className="text-xs font-mono text-foreground-muted">
+                                #{a.position}
+                              </span>
+                            )}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[13px] font-semibold truncate group-hover:text-bitcoin transition-colors">
+                              {a.project.name}
+                            </div>
+                            <div className="text-[10px] font-mono text-foreground-subtle flex items-center gap-1.5">
+                              <span className="tabular-nums">
+                                {formatSats(a.prize)} sats
+                              </span>
+                              {a.tied && (
+                                <span className="px-1 rounded bg-lightning/10 text-lightning border border-lightning/30 text-[9px] tracking-widest uppercase">
+                                  empate
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </Link>
+                      </li>
+                    ))}
+                  </ol>
+                  {awards.some((a) => a.tied) && (
+                    <p className="mt-3 text-[10px] font-mono text-foreground-subtle leading-relaxed">
+                      * Los premios de posiciones empatadas se dividen en partes
+                      iguales.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <div className="max-w-2xl mx-auto">
+                  <HackathonResultsClient
+                    hackathonId={hackathon.id}
+                    prizeDistribution={PROGRAM.prizeDistribution}
+                  />
+                </div>
+              )}
+            </Card>
+          </div>
         </div>
       </section>
 
@@ -273,69 +414,8 @@ export default async function HackathonPage({
             )}
           </div>
 
-          {/* Prize distribution */}
+          {/* Rules */}
           <div className="space-y-6">
-            <Card
-              title="Premios"
-              icon={<Trophy className="h-4 w-4" />}
-              subtitle={`${formatSats(PROGRAM.prizePerHackathon)} sats`}
-            >
-              {awards.length > 0 ? (
-                <>
-                  <ol className="space-y-2">
-                    {awards.map((a) => (
-                      <li key={a.project.id}>
-                        <Link
-                          href={`/hackathons/${hackathon.id}/${a.project.id}`}
-                          className={cn(
-                            "group flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors",
-                            a.position === 1
-                              ? "bg-bitcoin/10 border-bitcoin/30 hover:bg-bitcoin/15"
-                              : "bg-white/[0.02] border-border hover:bg-white/[0.05]",
-                          )}
-                        >
-                          <span className="text-lg leading-none shrink-0 w-7 text-center">
-                            {medal(a.position) || (
-                              <span className="text-xs font-mono text-foreground-muted">
-                                #{a.position}
-                              </span>
-                            )}
-                          </span>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-[13px] font-semibold truncate group-hover:text-bitcoin transition-colors">
-                              {a.project.name}
-                            </div>
-                            <div className="text-[10px] font-mono text-foreground-subtle flex items-center gap-1.5">
-                              <span className="tabular-nums">
-                                {formatSats(a.prize)} sats
-                              </span>
-                              {a.tied && (
-                                <span className="px-1 rounded bg-lightning/10 text-lightning border border-lightning/30 text-[9px] tracking-widest uppercase">
-                                  empate
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </Link>
-                      </li>
-                    ))}
-                  </ol>
-                  {awards.some((a) => a.tied) && (
-                    <p className="mt-3 text-[10px] font-mono text-foreground-subtle leading-relaxed">
-                      * Los premios de posiciones empatadas se dividen en partes
-                      iguales.
-                    </p>
-                  )}
-                </>
-              ) : (
-                /* Hackathons #03+ — fetch live results from Nostr */
-                <HackathonResultsClient
-                  hackathonId={hackathon.id}
-                  prizeDistribution={PROGRAM.prizeDistribution}
-                />
-              )}
-            </Card>
-
             <Card
               title="Participación"
               icon={<Users className="h-4 w-4" />}
