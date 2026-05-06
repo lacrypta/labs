@@ -65,7 +65,7 @@ export const PROJECTS: Project[] = [
     description:
       "Template oficial para empezar. NWC, Lightning Address, LNURL, WebLN.",
     status: "official",
-    team: [{ name: "La Crypta", github: "lacrypta-dev", role: "Organizers" }],
+    team: [{ name: "La Crypta", github: "lacrypta", role: "Organizers" }],
     repo: "https://github.com/lacrypta/lightning-starter",
     demo: "https://lightning-starter.vercel.app",
     tech: ["Alby SDK", "NWC", "LNURL", "WebLN", "Vite"],
@@ -320,7 +320,7 @@ export const PROJECTS: Project[] = [
     description:
       "Template oficial para empezar. Keys, profiles, relays, NIP-01 basics.",
     status: "official",
-    team: [{ name: "La Crypta", github: "lacrypta-dev", role: "Organizers" }],
+    team: [{ name: "La Crypta", github: "lacrypta", role: "Organizers" }],
     repo: "https://github.com/lacrypta/nostr-starter",
     tech: ["Nostr", "NIP-01", "NDK", "Vite"],
     hackathon: "identity",
